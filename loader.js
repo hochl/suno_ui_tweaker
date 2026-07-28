@@ -1,17 +1,25 @@
 (() => {
   "use strict";
 
-  // Persistent local loader for the main Suno script.
-  // The large readable script is stored in suno.com's localStorage.
+  // Persistent local loader for the main Suno enhancement script.
+  // The selected source file is stored in suno.com's localStorage.
   const CODE_KEY = "__suno_local_script_code_v1";
   const META_KEY = "__suno_local_script_meta_v1";
   const BUTTON_ID = "suno-local-script-delete-button";
   const OBSERVER_KEY = "__sunoLocalLoaderUiObserver";
-  const LOGO_SELECTOR = 'svg[aria-label="Suno Logo"]';
+  const EARN_CREDITS_SELECTOR = 'a[href="/listen-and-rank"]';
 
   function stopUiObserver() {
     window[OBSERVER_KEY]?.disconnect?.();
     delete window[OBSERVER_KEY];
+
+    // Remove listeners left by older loader versions.
+    const oldReposition = window.__sunoLocalLoaderReposition;
+    if (oldReposition) {
+      window.removeEventListener("resize", oldReposition);
+      window.removeEventListener("scroll", oldReposition, true);
+      delete window.__sunoLocalLoaderReposition;
+    }
   }
 
   function deleteStoredScript(button) {
@@ -22,119 +30,77 @@
     console.log("[Suno Local Loader] Stored script deleted.");
   }
 
-  function createDeleteButton() {
-    let button = document.getElementById(BUTTON_ID);
-    if (button) return button;
+  function createDeleteButton(earnCreditsLink) {
+    // Remove a button created by an older loader version, including the former
+    // fixed-position body control.
+    document.getElementById(BUTTON_ID)?.remove();
 
-    button = document.createElement("button");
+    const button = document.createElement("button");
     button.id = BUTTON_ID;
     button.type = "button";
-    button.title = "Gespeichertes lokales Skript löschen";
+    button.title = "Remove UI Tweak";
     button.setAttribute("aria-label", button.title);
+    button.setAttribute("data-inactive", "");
     button.dataset.sunoLocalLoaderControl = "delete";
+
+    // Reuse Suno's own Earn Credits classes so the control follows the sidebar
+    // width, colors, hover effect and collapsed-state behavior automatically.
+    button.className = earnCreditsLink.className;
+
     button.innerHTML = `
-      <svg viewBox="0 0 24 24" aria-hidden="true">
-        <path d="M9 3h6l1 2h4v2H4V5h4l1-2zm-2 6h10l-1 11H8L7 9zm3 2v7h2v-7h-2zm4 0v7h2v-7h-2z"></path>
-      </svg>
-    `;
-
-    // Keep the control independent from Suno's button and sidebar styles.
-    const styles = {
-      position: "relative",
-      display: "inline-flex",
-      visibility: "visible",
-      opacity: "0.9",
-      flex: "0 0 32px",
-      order: "2",
-      width: "32px",
-      height: "32px",
-      minWidth: "32px",
-      minHeight: "32px",
-      maxWidth: "32px",
-      maxHeight: "32px",
-      padding: "0",
-      margin: "0 0 0 6px",
-      alignItems: "center",
-      justifyContent: "center",
-      alignSelf: "center",
-      border: "1px solid rgba(255, 110, 110, 0.75)",
-      borderRadius: "9px",
-      backgroundColor: "rgba(55, 12, 12, 0.96)",
-      color: "#ffd7d7",
-      cursor: "pointer",
-      pointerEvents: "auto",
-      boxShadow: "0 2px 10px rgba(0, 0, 0, 0.45)",
-      outline: "none",
-      overflow: "visible",
-      zIndex: "2147483646",
-      transform: "none"
-    };
-
-    for (const [property, value] of Object.entries(styles)) {
-      const cssProperty = property.replace(/[A-Z]/g, letter => `-${letter.toLowerCase()}`);
-      button.style.setProperty(cssProperty, value, "important");
-    }
-
-    const icon = button.querySelector("svg");
-    icon.style.setProperty("display", "block", "important");
-    icon.style.setProperty("width", "17px", "important");
-    icon.style.setProperty("height", "17px", "important");
-    icon.style.setProperty("fill", "currentColor", "important");
-    icon.style.setProperty("pointer-events", "none", "important");
-
-    button.addEventListener("mouseenter", () => {
-      button.style.setProperty("opacity", "1", "important");
-      button.style.setProperty("background-color", "rgba(75, 16, 16, 0.98)", "important");
-    });
-
-    button.addEventListener("mouseleave", () => {
-      button.style.setProperty("opacity", "0.9", "important");
-      button.style.setProperty("background-color", "rgba(55, 12, 12, 0.96)", "important");
-    });
+      <span aria-hidden="true" class="hxc-btn-overlay-slot hxc-btn-border"></span>
+      <span class="hxc-btn-content">
+        <svg xmlns="http://www.w3.org/2000/svg"
+             width="1em"
+             height="1em"
+             viewBox="0 0 24 24"
+             fill="currentColor"
+             class="hxc-btn-icon"
+             aria-hidden="true">
+          <path d="M9 3h6l1 2h4v2h-1.1l-1 13H6.1l-1-13H4V5h4l1-2Zm-1.9 4 .85 11h8.1l.85-11H7.1ZM9 9h2v7H9V9Zm4 0h2v7h-2V9Z"></path>
+        </svg>
+        <span class="overflow-hidden whitespace-nowrap transition-opacity duration-200 group-data-[show-content=false]/sidebar:opacity-0">
+          Remove UI Tweak
+        </span>
+      </span>`;
 
     button.addEventListener("click", event => {
       event.preventDefault();
       event.stopPropagation();
+      event.stopImmediatePropagation();
       deleteStoredScript(button);
-    });
+    }, true);
 
     return button;
   }
 
   function mountDeleteButton() {
-    if (!localStorage.getItem(CODE_KEY)) return false;
-
-    const logo = document.querySelector(LOGO_SELECTOR);
-    const logoLink = logo?.closest("a");
-    const header = logoLink?.parentElement;
-    if (!logo || !logoLink || !header) return false;
-
-    // Use Suno's existing flex header and place the control immediately after
-    // the logo link. No viewport coordinates or measured positions are used.
-    header.style.setProperty("display", "flex", "important");
-    header.style.setProperty("flex-direction", "row", "important");
-    header.style.setProperty("align-items", "center", "important");
-    header.style.setProperty("justify-content", "flex-start", "important");
-    header.style.setProperty("overflow", "visible", "important");
-    header.style.setProperty("position", "relative", "important");
-
-    logoLink.style.setProperty("order", "1", "important");
-    logoLink.style.setProperty("flex", "0 1 7rem", "important");
-    logoLink.style.setProperty("min-width", "0", "important");
-
-    const button = createDeleteButton();
-
-    // insertAdjacentElement guarantees that the button is the next sibling of
-    // the logo link even after React rebuilds or reorders the header children.
-    if (logoLink.nextElementSibling !== button) {
-      logoLink.insertAdjacentElement("afterend", button);
+    if (!localStorage.getItem(CODE_KEY)) {
+      document.getElementById(BUTTON_ID)?.remove();
+      return false;
     }
 
-    console.debug("[Suno Local Loader] Delete button mounted next to the logo.", {
-      header,
-      logoLink,
-      button
-    });
+    const earnCreditsLink = document.querySelector(EARN_CREDITS_SELECTOR);
+    const targetGroup = earnCreditsLink?.parentElement;
+    if (!earnCreditsLink || !targetGroup) return false;
+
+    let button = document.getElementById(BUTTON_ID);
+
+    // Recreate controls from older versions or controls that React moved into a
+    // different parent. A fresh button also guarantees the current Suno classes.
+    if (!button || button.parentElement !== targetGroup) {
+      button?.remove();
+      button = createDeleteButton(earnCreditsLink);
+      targetGroup.insertBefore(button, earnCreditsLink);
+    } else if (button.nextElementSibling !== earnCreditsLink) {
+      targetGroup.insertBefore(button, earnCreditsLink);
+    }
+
+    // Keep the style synchronized if Suno changes the navigation button classes.
+    if (button.className !== earnCreditsLink.className) {
+      button.className = earnCreditsLink.className;
+    }
+
     return true;
   }
 
@@ -151,10 +117,15 @@
       });
     };
 
+    // Suno rebuilds parts of the sidebar with React. Reinsert the control after
+    // navigation and layout changes without polling continuously.
     const observer = new MutationObserver(scheduleMount);
-    observer.observe(document.documentElement, { childList: true, subtree: true });
-    window[OBSERVER_KEY] = observer;
+    observer.observe(document.documentElement, {
+      childList: true,
+      subtree: true
+    });
 
+    window[OBSERVER_KEY] = observer;
     scheduleMount();
   }
 
@@ -179,7 +150,10 @@
       if (!file) return;
 
       try {
-        const code = (await file.text()).replace(/^\s*javascript:/i, "").trim();
+        const code = (await file.text())
+          .replace(/^\s*javascript:/i, "")
+          .trim();
+
         if (!code) throw new Error("The selected file is empty.");
 
         localStorage.setItem(CODE_KEY, code);
@@ -192,7 +166,7 @@
         executeScript(code, file.name);
       } catch (error) {
         console.error("[Suno Local Loader] The file could not be loaded.", error);
-        alert(`Datei konnte nicht geladen werden:\n${error}`);
+        alert(`Could not load file:\n${error}`);
       }
     });
 
@@ -208,6 +182,6 @@
     else chooseLocalFile();
   } catch (error) {
     console.error("[Suno Local Loader] Loader error.", error);
-    alert(`Suno-Loader-Fehler:\n${error}`);
+    alert(`Suno loader error:\n${error}`);
   }
 })();
