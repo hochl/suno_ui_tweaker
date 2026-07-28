@@ -1,5 +1,5 @@
 /**
- * Suno Tweaks v30 — readable local script
+ * Suno Tweaks v38 — readable local script
  *
  * Loaded by the persistent local-file bookmarklet. The script keeps the accepted
  * v22 layout/playlist/title-edit behavior and adds the locally learned Create-page
@@ -14,7 +14,7 @@
  *
  * Debug objects:
  * - window.__sunoLocalScriptLoader  — loader status
- * - window.__sunoLineageV30        — lineage/coloring status
+ * - window.__sunoLineageV38        — lineage/coloring status
  */
 
 (()=> {
@@ -1234,11 +1234,11 @@ function createLineageColorsSafe() {
         r.style.removeProperty("box-shadow");
         r.style.removeProperty("border-radius")
       }
-      window.__sunoLineageV30={
+      window.__sunoLineageV38={
         ok:true, parents:lnParents.size, rows:items.length, activeGroups, lastRun:Date.now()
       }
     } catch(e) {
-      window.__sunoLineageV30={
+      window.__sunoLineageV38={
         ok:false, error:String(e), stack:e&&e.stack||"", lastRun:Date.now()
       }
     }
@@ -1281,6 +1281,12 @@ function createTitleEdit() {
   // Main idempotent refresh pass. Safe to call after every relevant DOM mutation.
 function run() {
     wide();
+
+    // Hide the profile carousel independently of pinned-song discovery.
+    // This is required after client-side navigation from Create to a profile,
+    // where pinned-song data may not be available during the first refresh pass.
+    hideCarousel();
+
     playlistCovers();
     playlistLikes();
     createTitleEdit();
@@ -1316,4 +1322,4 @@ let raf=0, sched=()=>raf||(raf=requestAnimationFrame(()=> {
   })
 })();
 
-//# sourceURL=suno-tweaks-v30-readable.js
+//# sourceURL=suno-tweaks-v38-readable.js
