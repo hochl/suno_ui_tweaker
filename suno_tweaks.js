@@ -1,5 +1,5 @@
 /**
- * Suno Tweaks v38 — readable local script
+ * Suno Tweaks v41 — readable local script
  *
  * Loaded by the persistent local-file bookmarklet. The script keeps the accepted
  * v22 layout/playlist/title-edit behavior and adds the locally learned Create-page
@@ -14,7 +14,7 @@
  *
  * Debug objects:
  * - window.__sunoLocalScriptLoader  — loader status
- * - window.__sunoLineageV38        — lineage/coloring status
+ * - window.__sunoLineageV41        — lineage/coloring status
  */
 
 (()=> {
@@ -53,6 +53,7 @@ button[aria-label="Playing"][class*="rounded-full"][class*="bg-background"],butt
 [data-sc=txt]{display:flex!important;flex-direction:column!important;gap:2px!important;width:${W}px!important;max-width:${W}px!important;min-width:0!important;overflow:visible!important;flex:none!important}
 [data-sc=txt] a[href^="/song/"]{display:block!important;width:${W}px!important;max-width:${W}px!important;font-size:14px!important;font-weight:600!important;line-height:1.25!important;white-space:nowrap!important;overflow:hidden!important;text-overflow:ellipsis!important;text-decoration:none!important}
 [data-sc=txt] a[href^="/song/"]:hover{text-decoration:underline!important}
+#suno-song-title-exact-overlay{position:fixed!important;display:block!important;width:max-content!important;height:auto!important;max-height:none!important;box-sizing:border-box!important;margin:0!important;padding:0!important;white-space:normal!important;overflow:visible!important;text-overflow:clip!important;overflow-wrap:anywhere!important;background:#000!important;border-radius:2px!important;text-decoration:none!important;cursor:pointer!important;z-index:2147483647!important}
 [data-sc=txt] [class*=clip-title-wrapper],[data-sc=txt] .flex.items-center.gap-2{width:${W}px!important;max-width:${W}px!important;min-width:0!important;overflow:hidden!important}
 [data-sc=menu]{position:absolute!important;top:8px!important;right:8px!important;z-index:20!important;opacity:0!important;transition:opacity .12s ease!important}
 [data-sc=row]:hover [data-sc=menu]{opacity:1!important}
@@ -1234,11 +1235,11 @@ function createLineageColorsSafe() {
         r.style.removeProperty("box-shadow");
         r.style.removeProperty("border-radius")
       }
-      window.__sunoLineageV38={
+      window.__sunoLineageV41={
         ok:true, parents:lnParents.size, rows:items.length, activeGroups, lastRun:Date.now()
       }
     } catch(e) {
-      window.__sunoLineageV38={
+      window.__sunoLineageV41={
         ok:false, error:String(e), stack:e&&e.stack||"", lastRun:Date.now()
       }
     }
@@ -1278,6 +1279,295 @@ function createTitleEdit() {
       }
     })
   }
+  // ---------------------------------------------------------------------------
+  // Exact-position expansion for truncated song titles
+  // ---------------------------------------------------------------------------
+  // Suno clips the text through the surrounding .clip-title-wrapper rather than
+  // through the anchor itself. Measuring only the link therefore misses titles
+  // whose link retains its natural width. The implementation below measures the
+  // full text against the wrapper width and, on hover, places a clickable copy at
+  // exactly the same viewport coordinates as the original title. The first line
+  // uses the same font, line height and starting position, so the title appears to
+  // expand in place instead of showing a detached tooltip above the card.
+  const TITLE_SELECTOR = '[class*="clip-title-wrapper"] > a[href^="/song/"]';
+  const TITLE_OVERLAY_ID = 'suno-song-title-exact-overlay';
+  const TITLE_HANDLER_KEY = '__sunoSongTitleExactOverlayHandlers';
+  const OLD_TITLE_EXPAND_HANDLER_KEY = '__sunoSongTitleExpansionHandlers';
+  const OLD_TITLE_TOOLTIP_HANDLER_KEY = '__sunoSongTitleTooltipHandlers';
+  const titleMeasureCanvas = document.createElement('canvas');
+  const titleMeasureContext = titleMeasureCanvas.getContext('2d');
+
+  function normalizeSongTitle(value) {
+    return String(value || '').replace(/\s+/g, ' ').trim();
+  }
+
+  function titleWrapperFor(link) {
+    return link.closest('[class*="clip-title-wrapper"]');
+  }
+
+  function measuredTitleWidth(link, title) {
+    const style = getComputedStyle(link);
+
+    if (!titleMeasureContext) return 0;
+
+    titleMeasureContext.font = style.font ||
+      `${style.fontStyle} ${style.fontWeight} ${style.fontSize} ${style.fontFamily}`;
+
+    let width = titleMeasureContext.measureText(title).width;
+    const letterSpacing = parseFloat(style.letterSpacing);
+
+    if (Number.isFinite(letterSpacing) && title.length > 1) {
+      width += letterSpacing * (title.length - 1);
+    }
+
+    return width;
+  }
+
+  function availableTitleWidth(link, wrapper) {
+    const wrapperRect = wrapper?.getBoundingClientRect();
+    const wrapperWidth = wrapper?.clientWidth || wrapperRect?.width || 0;
+
+    if (wrapperWidth > 0) return wrapperWidth;
+
+    const parentRect = link.parentElement?.getBoundingClientRect();
+    return link.clientWidth || parentRect?.width || link.getBoundingClientRect().width || 0;
+  }
+
+  function isSongTitleTruncated(link, wrapper, fullTitle) {
+    const availableWidth = availableTitleWidth(link, wrapper);
+    if (!availableWidth) return false;
+
+    if (wrapper && wrapper.scrollWidth > wrapper.clientWidth + 1) return true;
+    if (link.scrollWidth > availableWidth + 1) return true;
+
+    return measuredTitleWidth(link, fullTitle) > availableWidth + 1;
+  }
+
+  function clearIncorrectTitleMarkers() {
+    $('a[data-suno-full-title], a[data-suno-title-expand]').forEach(link => {
+      if (link.matches(TITLE_SELECTOR)) return;
+
+      delete link.dataset.sunoFullTitle;
+      delete link.dataset.sunoTitleExpand;
+      link.style.removeProperty('--suno-title-visible-width');
+    });
+  }
+
+  function prepareSongTitleExpansion() {
+    clearIncorrectTitleMarkers();
+
+    $(TITLE_SELECTOR).forEach(link => {
+      const visibleTitle = normalizeSongTitle(link.textContent);
+      const explicitTitle = normalizeSongTitle(link.getAttribute('title'));
+      const rememberedTitle = normalizeSongTitle(link.dataset.sunoFullTitle);
+      const fullTitle = explicitTitle || visibleTitle || rememberedTitle;
+      const wrapper = titleWrapperFor(link);
+
+      if (!visibleTitle || !fullTitle || !wrapper) return;
+
+      link.dataset.sunoFullTitle = fullTitle;
+      link.removeAttribute('title');
+
+      if (isSongTitleTruncated(link, wrapper, fullTitle)) {
+        link.dataset.sunoTitleExpand = '1';
+      } else {
+        delete link.dataset.sunoTitleExpand;
+      }
+    });
+  }
+
+  function removeListenerSet(key) {
+    const handlers = window[key];
+    if (!handlers) return;
+
+    if (handlers.onPointerOver) {
+      document.removeEventListener('pointerover', handlers.onPointerOver, true);
+    }
+    if (handlers.onPointerOut) {
+      document.removeEventListener('pointerout', handlers.onPointerOut, true);
+    }
+    if (handlers.onFocusIn) {
+      document.removeEventListener('focusin', handlers.onFocusIn, true);
+    }
+    if (handlers.onFocusOut) {
+      document.removeEventListener('focusout', handlers.onFocusOut, true);
+    }
+    if (handlers.onPointerDown) {
+      document.removeEventListener('pointerdown', handlers.onPointerDown, true);
+    }
+    if (handlers.onKeyDown) {
+      document.removeEventListener('keydown', handlers.onKeyDown, true);
+    }
+    if (handlers.hide) {
+      window.removeEventListener('scroll', handlers.hide, true);
+      window.removeEventListener('resize', handlers.hide, true);
+    }
+
+    handlers.hide?.();
+    handlers.clearActive?.();
+    delete window[key];
+  }
+
+  function installSongTitleExpansion() {
+    removeListenerSet(TITLE_HANDLER_KEY);
+    removeListenerSet(OLD_TITLE_EXPAND_HANDLER_KEY);
+    removeListenerSet(OLD_TITLE_TOOLTIP_HANDLER_KEY);
+    document.getElementById('suno-song-title-tooltip')?.remove();
+    document.getElementById(TITLE_OVERLAY_ID)?.remove();
+
+    let activeLink = null;
+    let overlay = null;
+    let hideTimer = 0;
+
+    const cancelHide = () => {
+      if (!hideTimer) return;
+      clearTimeout(hideTimer);
+      hideTimer = 0;
+    };
+
+    const hide = () => {
+      cancelHide();
+      overlay?.remove();
+      overlay = null;
+      activeLink = null;
+    };
+
+    const scheduleHide = () => {
+      cancelHide();
+      hideTimer = window.setTimeout(hide, 45);
+    };
+
+    const copyTypography = (source, target) => {
+      const style = getComputedStyle(source);
+      const properties = [
+        'color',
+        'fontFamily',
+        'fontSize',
+        'fontStyle',
+        'fontWeight',
+        'fontStretch',
+        'fontVariant',
+        'fontFeatureSettings',
+        'fontKerning',
+        'letterSpacing',
+        'lineHeight',
+        'textTransform',
+        'wordSpacing'
+      ];
+
+      properties.forEach(property => {
+        const value = style[property];
+        if (value) target.style[property] = value;
+      });
+    };
+
+    const show = link => {
+      if (!link?.matches?.(`${TITLE_SELECTOR}[data-suno-title-expand="1"]`)) return;
+
+      cancelHide();
+
+      if (activeLink === link && overlay?.isConnected) return;
+      hide();
+
+      const fullTitle = normalizeSongTitle(link.dataset.sunoFullTitle || link.textContent);
+      const wrapper = titleWrapperFor(link);
+      const linkRect = link.getBoundingClientRect();
+      const wrapperRect = wrapper?.getBoundingClientRect() || linkRect;
+
+      if (!fullTitle || !linkRect.width || !linkRect.height) return;
+
+      activeLink = link;
+      overlay = document.createElement('a');
+      overlay.id = TITLE_OVERLAY_ID;
+      overlay.href = link.href;
+      overlay.textContent = fullTitle;
+      overlay.setAttribute('aria-label', fullTitle);
+
+      if (link.target) overlay.target = link.target;
+      if (link.rel) overlay.rel = link.rel;
+
+      copyTypography(link, overlay);
+
+      const left = Math.round(linkRect.left);
+      const top = Math.round(linkRect.top);
+      const visibleWidth = Math.max(1, Math.round(wrapperRect.width || linkRect.width));
+      const viewportRoom = Math.max(visibleWidth, window.innerWidth - left - 8);
+      const maximumWidth = Math.max(visibleWidth, Math.min(520, viewportRoom));
+
+      overlay.style.setProperty('left', `${left}px`, 'important');
+      overlay.style.setProperty('top', `${top}px`, 'important');
+      overlay.style.setProperty('min-width', `${visibleWidth}px`, 'important');
+      overlay.style.setProperty('max-width', `${maximumWidth}px`, 'important');
+      overlay.style.setProperty('color', getComputedStyle(link).color, 'important');
+
+      overlay.addEventListener('pointerenter', cancelHide);
+      overlay.addEventListener('pointerleave', scheduleHide);
+      overlay.addEventListener('focus', cancelHide);
+      overlay.addEventListener('blur', scheduleHide);
+
+      document.body.appendChild(overlay);
+    };
+
+    const onPointerOver = event => {
+      const link = event.target.closest?.(`${TITLE_SELECTOR}[data-suno-title-expand="1"]`);
+      if (!link || link.contains(event.relatedTarget)) return;
+      show(link);
+    };
+
+    const onPointerOut = event => {
+      const link = event.target.closest?.(`${TITLE_SELECTOR}[data-suno-title-expand="1"]`);
+      if (!link || link.contains(event.relatedTarget)) return;
+      if (overlay && (event.relatedTarget === overlay || overlay.contains(event.relatedTarget))) {
+        return;
+      }
+      scheduleHide();
+    };
+
+    const onFocusIn = event => {
+      const link = event.target.closest?.(`${TITLE_SELECTOR}[data-suno-title-expand="1"]`);
+      if (link) show(link);
+    };
+
+    const onFocusOut = event => {
+      const link = event.target.closest?.(`${TITLE_SELECTOR}[data-suno-title-expand="1"]`);
+      if (!link) return;
+      if (overlay && (event.relatedTarget === overlay || overlay.contains(event.relatedTarget))) {
+        return;
+      }
+      scheduleHide();
+    };
+
+    const onPointerDown = event => {
+      if (overlay && (event.target === overlay || overlay.contains(event.target))) return;
+      hide();
+    };
+
+    const onKeyDown = event => {
+      if (event.key === 'Escape') hide();
+    };
+
+    const handlers = {
+      onPointerOver,
+      onPointerOut,
+      onFocusIn,
+      onFocusOut,
+      onPointerDown,
+      onKeyDown,
+      hide
+    };
+
+    window[TITLE_HANDLER_KEY] = handlers;
+
+    document.addEventListener('pointerover', onPointerOver, true);
+    document.addEventListener('pointerout', onPointerOut, true);
+    document.addEventListener('focusin', onFocusIn, true);
+    document.addEventListener('focusout', onFocusOut, true);
+    document.addEventListener('pointerdown', onPointerDown, true);
+    document.addEventListener('keydown', onKeyDown, true);
+    window.addEventListener('scroll', hide, true);
+    window.addEventListener('resize', hide, true);
+  }
+
   // Main idempotent refresh pass. Safe to call after every relevant DOM mutation.
 function run() {
     wide();
@@ -1292,6 +1582,7 @@ function run() {
     createTitleEdit();
     createLineageColorsSafe();
     layoutCards();
+    prepareSongTitleExpansion();
     let nr=layoutNewRows(), ch=applyPins();
     if(ch||nr) {
       layoutCards();
@@ -1312,6 +1603,7 @@ let raf=0, sched=()=>raf||(raf=requestAnimationFrame(()=> {
     raf=0;
     run()
   }));
+  installSongTitleExpansion();
   run();
   window[OBS]=new MutationObserver(sched);
   window[OBS].observe(document.body, {
@@ -1322,4 +1614,4 @@ let raf=0, sched=()=>raf||(raf=requestAnimationFrame(()=> {
   })
 })();
 
-//# sourceURL=suno-tweaks-v38-readable.js
+//# sourceURL=suno-tweaks-v41-readable.js
