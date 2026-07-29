@@ -1,5 +1,5 @@
 /**
- * Suno Tweaks v57 — readable local script
+ * Suno Tweaks v58 — readable local script
  *
  * Loaded by the persistent local-file bookmarklet. The script keeps the accepted
  * layout, playlist, title-edit and title-expansion behaviour while adding a compact
@@ -17,10 +17,10 @@
  *
  * Debug objects:
  * - window.__sunoLocalScriptLoader     — loader status
- * - window.__sunoWorkspaceIndexV57     — workspace indexing status
- * - window.__sunoAncestryOverlayV57    — ancestry overlay status
- * - window.__sunoAncestryNavigationDiagnosticV57 — navigation event log
- * - window.__sunoCreditsV57        — exact credit balance and refresh status
+ * - window.__sunoWorkspaceIndexV58     — workspace indexing status
+ * - window.__sunoAncestryOverlayV58    — ancestry overlay status
+ * - window.__sunoAncestryNavigationDiagnosticV58 — navigation event log
+ * - window.__sunoCreditsV58        — exact credit balance and refresh status
  */
 
 (()=> {
@@ -108,7 +108,9 @@ li>[role="button"][aria-roledescription="sortable"] .clip-row .clip-image-contai
 #suno-create-ancestry-overlay .suno-ancestry-copy{display:flex!important;min-width:0!important;flex-direction:column!important;gap:1px!important}
 #suno-create-ancestry-overlay .suno-ancestry-title{min-width:0!important;overflow:hidden!important;text-overflow:ellipsis!important;white-space:nowrap!important;font-size:12.5px!important;font-weight:600!important;line-height:1.18!important;color:rgba(255,255,255,.94)!important}
 #suno-create-ancestry-overlay .suno-ancestry-id{overflow:hidden!important;text-overflow:ellipsis!important;white-space:nowrap!important;font-size:9.5px!important;line-height:1.1!important;color:rgba(255,255,255,.42)!important}
-#suno-create-ancestry-overlay .suno-ancestry-kind{align-self:center!important;max-width:92px!important;overflow:hidden!important;text-overflow:ellipsis!important;white-space:nowrap!important;padding:2px 5px!important;border-radius:999px!important;background:rgba(255,255,255,.07)!important;font-size:9px!important;line-height:1.1!important;color:rgba(255,255,255,.60)!important;text-transform:uppercase!important;letter-spacing:.035em!important}
+#suno-create-ancestry-overlay .suno-ancestry-kind-block{align-self:center!important;display:flex!important;max-width:104px!important;min-width:0!important;flex-direction:column!important;align-items:flex-end!important;gap:2px!important}
+#suno-create-ancestry-overlay .suno-ancestry-kind{display:block!important;max-width:104px!important;overflow:hidden!important;text-overflow:ellipsis!important;white-space:nowrap!important;padding:2px 5px!important;border-radius:999px!important;background:rgba(255,255,255,.07)!important;font-size:9px!important;line-height:1.1!important;color:rgba(255,255,255,.60)!important;text-transform:uppercase!important;letter-spacing:.035em!important}
+#suno-create-ancestry-overlay .suno-ancestry-time{display:block!important;padding-right:4px!important;white-space:nowrap!important;font:500 8.5px/1.05 system-ui,sans-serif!important;color:rgba(255,255,255,.43)!important;font-variant-numeric:tabular-nums!important;text-transform:none!important;letter-spacing:0!important}
 #suno-create-ancestry-overlay .suno-ancestry-cycle{color:#f0b36b!important}
 #suno-create-ancestry-overlay .suno-ancestry-status{padding:7px 9px!important;font:500 11px/1.35 system-ui,sans-serif!important;color:rgba(255,255,255,.62)!important}
 #suno-create-ancestry-overlay .suno-ancestry-more{padding:5px 8px!important;font:500 10px/1.2 system-ui,sans-serif!important;color:rgba(255,255,255,.54)!important}
@@ -872,11 +874,11 @@ function playlistLikes() {
   const WORKSPACE_BATCH_SIZE=35;
 
   const CREDIT_WIDGET_ID='suno-exact-credit-sidebar-entry';
-  const CREDIT_CACHE_KEY='__suno_exact_credit_balance_v57';
+  const CREDIT_CACHE_KEY='__suno_exact_credit_balance_v58';
   const CREDIT_REFRESH_MS=60000;
   const CREDIT_API_URL=`${STUDIO_API_BASE}/api/billing/info/`;
 
-  const previousCreditController=window.__sunoCreditsV57||window.__sunoCreditsV56||window.__sunoCreditsV55;
+  const previousCreditController=window.__sunoCreditsV58||window.__sunoCreditsV57||window.__sunoCreditsV56||window.__sunoCreditsV55;
   try { previousCreditController?.stop?.(); } catch(error) {}
 
   const creditState={
@@ -1107,7 +1109,7 @@ function playlistLikes() {
   }
 
   function creditDebugState() {
-    window.__sunoCreditsV57={
+    window.__sunoCreditsV58={
       value:creditState.value,
       formatted:creditText(),
       lastUpdated:creditState.lastUpdated,
@@ -1141,6 +1143,8 @@ function playlistLikes() {
   let lnLastDetail=0;
   let lnSaveTimer=0;
   let lnLoadingStore=false;
+
+  const relationDetailsRefreshed=new Set();
 
   const workspaceState={
     id:'',
@@ -1197,12 +1201,21 @@ function playlistLikes() {
     return priorities[String(kind||'').toLowerCase()]||50;
   }
 
-  function lnAddSource(childId, sourceId, kind='derived') {
+  function lnContinueAt(value) {
+    if(value===undefined||value===null||value==='')return null;
+    const number=Number(value);
+    return Number.isFinite(number)&&number>=0?number:null;
+  }
+
+  function lnAddSource(childId, sourceId, kind='derived', details={}) {
     childId=lnNorm(childId);
     sourceId=lnNorm(sourceId);
     kind=String(kind||'derived').replace(/_clip_id$/i, '').toLowerCase();
     if(!childId||!sourceId||childId===sourceId)return false;
 
+    const continueAt=lnContinueAt(
+      details&&typeof details==='object'?(details.continueAt??details.continue_at):details
+    );
     let sources=lnSources.get(childId);
     if(!sources)lnSources.set(childId, sources=[]);
 
@@ -1213,8 +1226,14 @@ function playlistLikes() {
         existing.kind=kind;
         changed=true;
       }
+      if(continueAt!==null&&lnContinueAt(existing.continueAt)!==continueAt) {
+        existing.continueAt=continueAt;
+        changed=true;
+      }
     } else {
-      sources.push({id:sourceId, kind});
+      const source={id:sourceId, kind};
+      if(continueAt!==null)source.continueAt=continueAt;
+      sources.push(source);
       changed=true;
     }
 
@@ -1302,7 +1321,7 @@ function playlistLikes() {
     for(const[id, values]of Object.entries(sources)) {
       const child=lnNorm(id);
       if(!child||!Array.isArray(values))continue;
-      for(const value of values)lnAddSource(child, value?.id||value?.parent||value, value?.kind||'derived');
+      for(const value of values)lnAddSource(child, value?.id||value?.parent||value, value?.kind||'derived', value||{});
     }
     for(const[id, info]of Object.entries(songs))lnRememberInfo(id, info||{});
   }
@@ -1324,7 +1343,12 @@ function playlistLikes() {
         const sources={};
         const songs={};
         for(const[id, list]of lnSources) {
-          sources[id]=list.map(source=>({id:source.id, kind:source.kind||'derived'}));
+          sources[id]=list.map(source=>{
+            const stored={id:source.id, kind:source.kind||'derived'};
+            const continueAt=lnContinueAt(source.continueAt);
+            if(continueAt!==null)stored.continueAt=continueAt;
+            return stored;
+          });
         }
         for(const[id, info]of [...lnSongInfo.entries()].slice(-1200)) {
           songs[id]={
@@ -1339,8 +1363,8 @@ function playlistLikes() {
     }, 160);
   }
 
-  function lnSet(childId, sourceId, kind='derived') {
-    return lnAddSource(childId, sourceId, kind);
+  function lnSet(childId, sourceId, kind='derived', details={}) {
+    return lnAddSource(childId, sourceId, kind, details);
   }
 
   function lnVal(object, metadata, key) {
@@ -1384,24 +1408,39 @@ function playlistLikes() {
     const metadata=object?.metadata&&typeof object.metadata==='object'?object.metadata:{};
     const task=String(lnVal(object, metadata, 'task')||'').toLowerCase();
     const type=String(lnVal(object, metadata, 'type')||lnVal(object, metadata, 'clip_type')||'').toLowerCase();
+    const history=lnVal(object, metadata, 'history');
+    const historyContinueAt=Array.isArray(history)?history.map(item=>
+      lnContinueAt(item?.continue_at??item?.continueAt)
+    ).find(value=>value!==null):null;
+    const extendContinueAt=lnContinueAt(lnVal(object, metadata, 'continue_at'))??
+      lnContinueAt(lnVal(object, metadata, 'continueAt'))??historyContinueAt;
     const result=[];
-    const add=(value, kind)=> {
+    const add=(value, kind, details={})=> {
+      const continueAt=lnContinueAt(
+        details&&typeof details==='object'?(details.continueAt??details.continue_at):details
+      );
       for(const id of lnIds(value)) {
         const existing=result.find(source=>source.id===id);
-        if(!existing)result.push({id, kind});
-        else if(lnKindPriority(kind)>lnKindPriority(existing.kind))existing.kind=kind;
+        if(!existing) {
+          const source={id, kind};
+          if(continueAt!==null)source.continueAt=continueAt;
+          result.push(source);
+        } else {
+          if(lnKindPriority(kind)>lnKindPriority(existing.kind))existing.kind=kind;
+          if(continueAt!==null)existing.continueAt=continueAt;
+        }
       }
     };
 
     if(task==='infill'||task==='fixed_infill') {
       add(lnVal(object, metadata, 'override_history_clip_id'), 'section');
       add(lnVal(object, metadata, 'override_future_clip_id'), 'section');
-      add(lnVal(object, metadata, 'history'), 'section');
+      add(history, 'section');
       add(lnVal(object, metadata, 'edited_clip_id'), 'edit');
     }
     if(task==='extend') {
-      add(lnVal(object, metadata, 'history'), 'extend');
-      add(lnVal(object, metadata, 'continue_clip_id'), 'extend');
+      add(history, 'extend', {continueAt:extendContinueAt});
+      add(lnVal(object, metadata, 'continue_clip_id'), 'extend', {continueAt:extendContinueAt});
       add(lnVal(object, metadata, 'edited_clip_id'), 'edit');
     }
     if(type==='concat') {
@@ -1435,7 +1474,9 @@ function playlistLikes() {
       ['concat_history','stitch'], ['source_clips','source'],
       ['reference_clips','reference'], ['input_clips','input']
     ];
-    for(const[field, kind]of fields)add(lnVal(object, metadata, field), kind);
+    for(const[field, kind]of fields)add(
+      lnVal(object, metadata, field),kind,kind==='extend'?{continueAt:extendContinueAt}:{}
+    );
 
     if(!result.length) {
       const roots=lnVal(object, metadata, 'clip_roots');
@@ -1506,7 +1547,7 @@ function playlistLikes() {
     lnRememberObject(object);
     let changed=false;
     for(const source of lnSourcesFromObject(object)) {
-      changed=lnAddSource(id, source.id, source.kind)||changed;
+      changed=lnAddSource(id, source.id, source.kind, source)||changed;
     }
     if(!lnSources.get(id)?.length) {
       const preferred=lnPreferredSource(object);
@@ -2029,7 +2070,7 @@ function playlistLikes() {
         image_url:source.image_url||source.image||'',
         audio_url:source.audio_url||source.audio||''
       });
-      changed=lnAddSource(childId,sourceId,lnAttributionKind(source.relationship))||changed;
+      changed=lnAddSource(childId,sourceId,lnAttributionKind(source.relationship),source)||changed;
     }
     return changed;
   }
@@ -2445,14 +2486,14 @@ function playlistLikes() {
   }
 
   function workspaceInstallFetchCapture() {
-    for(const key of ['__sunoWorkspaceFetchCaptureV43','__sunoWorkspaceFetchCaptureV44','__sunoWorkspaceFetchCaptureV46','__sunoWorkspaceFetchCaptureV47','__sunoWorkspaceFetchCaptureV49','__sunoWorkspaceFetchCaptureV50','__sunoWorkspaceFetchCaptureV51','__sunoWorkspaceFetchCaptureV52','__sunoWorkspaceFetchCaptureV53','__sunoWorkspaceFetchCaptureV54','__sunoWorkspaceFetchCaptureV55','__sunoWorkspaceFetchCaptureV56']) {
+    for(const key of ['__sunoWorkspaceFetchCaptureV43','__sunoWorkspaceFetchCaptureV44','__sunoWorkspaceFetchCaptureV46','__sunoWorkspaceFetchCaptureV47','__sunoWorkspaceFetchCaptureV49','__sunoWorkspaceFetchCaptureV50','__sunoWorkspaceFetchCaptureV51','__sunoWorkspaceFetchCaptureV52','__sunoWorkspaceFetchCaptureV53','__sunoWorkspaceFetchCaptureV54','__sunoWorkspaceFetchCaptureV55','__sunoWorkspaceFetchCaptureV56','__sunoWorkspaceFetchCaptureV57']) {
       const oldHook=window[key];
       if(oldHook?.wrapped&&window.fetch===oldHook.wrapped&&typeof oldHook.originalFetch==='function') {
         window.fetch=oldHook.originalFetch;
       }
       try { delete window[key]; } catch(error) {}
     }
-    if(window.__sunoWorkspaceFetchCaptureV57)return;
+    if(window.__sunoWorkspaceFetchCaptureV58)return;
     const originalFetch=window.fetch;
     if(typeof originalFetch!=='function')return;
 
@@ -2475,7 +2516,7 @@ function playlistLikes() {
     };
     wrapped.__sunoOriginalFetch=originalFetch;
     window.fetch=wrapped;
-    window.__sunoWorkspaceFetchCaptureV57={originalFetch,wrapped};
+    window.__sunoWorkspaceFetchCaptureV58={originalFetch,wrapped};
     workspaceState.fetchHookInstalled=true;
   }
 
@@ -2528,12 +2569,13 @@ function playlistLikes() {
     }
   }
 
-  async function workspaceEnsureSong(id) {
+  async function workspaceEnsureSong(id, forceDetails=false) {
     id=lnNorm(id);
     if(!id)return null;
     let info=lnSongInfo.get(id);
-    if(info?.title&&info?.image&&info?.createdAt)return info;
+    if(!forceDetails&&info?.title&&info?.image&&info?.createdAt)return info;
 
+    if(forceDetails)workspaceState.requestedSongIds.delete(id);
     try { await workspaceFetchSongBatch([id]); } catch(error) {}
     info=lnSongInfo.get(id);
     if(info?.title&&info?.image&&info?.createdAt)return info;
@@ -2572,10 +2614,18 @@ function playlistLikes() {
       }
       if(!batch.length)break;
 
-      await Promise.all(batch.flatMap(id=>[
-        workspaceEnsureSong(id).catch(()=>null),
-        workspaceEnsureAttribution(id).catch(()=>null)
-      ]));
+      await Promise.all(batch.flatMap(id=>{
+        const sources=lnSources.get(id)||[];
+        const missingExtendTime=sources.some(source=>
+          (source.kind==='extend'||source.kind==='continue')&&lnContinueAt(source.continueAt)===null
+        );
+        const forceDetails=missingExtendTime&&!relationDetailsRefreshed.has(id);
+        if(forceDetails)relationDetailsRefreshed.add(id);
+        return [
+          workspaceEnsureSong(id,forceDetails).catch(()=>null),
+          workspaceEnsureAttribution(id).catch(()=>null)
+        ];
+      }));
 
       const next=[];
       for(const id of batch) {
@@ -2648,7 +2698,7 @@ function playlistLikes() {
   }
 
   function workspaceDebugState(extra={}) {
-    window.__sunoWorkspaceIndexV57={
+    window.__sunoWorkspaceIndexV58={
       workspaceId:workspaceState.id,
       workspaceIdentitySource:workspaceState.identitySource||'',
       workspaceUsesDefaultRoute:workspaceIsFallbackId(),
@@ -2688,7 +2738,7 @@ function playlistLikes() {
   const ANCESTRY_MAX_DEPTH=10;
   const ANCESTRY_MAX_ENTRIES=100;
   const ANCESTRY_POINTER_OFFSET=14;
-  const NAV_DIAGNOSTIC_KEY='__sunoAncestryNavigationDiagnosticV57';
+  const NAV_DIAGNOSTIC_KEY='__sunoAncestryNavigationDiagnosticV58';
   const navDiagnosticState={events:[],activeTarget:'',startedAt:Date.now()};
 
   function navDiagnosticRows() {
@@ -2737,15 +2787,15 @@ function playlistLikes() {
 
   function installNavigationDiagnosticApi() {
     window[NAV_DIAGNOSTIC_KEY]={
-      version:57,
+      version:58,
       events:navDiagnosticState.events,
       snapshot:(label='manual')=>navDiagnosticRecord(label,navDiagnosticState.activeTarget),
       clear:()=>{navDiagnosticState.events.length=0;navDiagnosticState.startedAt=Date.now();},
       export:()=>JSON.stringify({
-        version:57,
+        version:58,
         url:location.href,
         exportedAt:new Date().toISOString(),
-        workspace:window.__sunoWorkspaceIndexV57||null,
+        workspace:window.__sunoWorkspaceIndexV58||null,
         events:navDiagnosticState.events
       },null,2)
     };
@@ -2792,6 +2842,17 @@ function playlistLikes() {
     return id.length>13?`${id.slice(0,8)}…${id.slice(-4)}`:id;
   }
 
+  function lnFormatRelationTime(seconds) {
+    seconds=lnContinueAt(seconds);
+    if(seconds===null)return '';
+    const total=Math.max(0,Math.round(seconds));
+    const hours=Math.floor(total/3600);
+    const minutes=Math.floor((total%3600)/60);
+    const remainder=total%60;
+    return hours>0?`${hours}:${String(minutes).padStart(2,'0')}:${String(remainder).padStart(2,'0')}`:
+      `${minutes}:${String(remainder).padStart(2,'0')}`;
+  }
+
   function lnDisplayKind(kind) {
     const labels={
       cover:'Cover',remix:'Remix',sample:'Sample',chop_sample:'Chop sample',
@@ -2827,6 +2888,7 @@ function playlistLikes() {
         entries.push({
           id:source.id,
           kind:source.kind||'derived',
+          continueAt:lnContinueAt(source.continueAt),
           depth,
           cycle,
           info:lnSongInfo.get(source.id)||{}
@@ -3064,7 +3126,7 @@ function playlistLikes() {
     return row;
   }
 
-  const SELECTED_SONG_HANDLER_KEY='__sunoSelectedSongTintV57';
+  const SELECTED_SONG_HANDLER_KEY='__sunoSelectedSongTintV58';
   let selectedSongId='';
 
   function workspaceRowSongId(row) {
@@ -3089,8 +3151,9 @@ function playlistLikes() {
   }
 
   function installSelectedSongTint() {
-    const old=window[SELECTED_SONG_HANDLER_KEY]||window.__sunoSelectedSongTintV56||window.__sunoSelectedSongTintV55;
+    const old=window[SELECTED_SONG_HANDLER_KEY]||window.__sunoSelectedSongTintV57||window.__sunoSelectedSongTintV56||window.__sunoSelectedSongTintV55;
     if(old?.onClick)document.removeEventListener('click',old.onClick,true);
+    try { delete window.__sunoSelectedSongTintV57; } catch(error) {}
     try { delete window.__sunoSelectedSongTintV56; } catch(error) {}
     try { delete window.__sunoSelectedSongTintV55; } catch(error) {}
 
@@ -3271,8 +3334,8 @@ function playlistLikes() {
       overlay?.remove();
       overlay=null;
       activeRow=null;
-      window.__sunoAncestryOverlayV57={
-        ...(window.__sunoAncestryOverlayV57||{}),open:false,lastClose:Date.now()
+      window.__sunoAncestryOverlayV58={
+        ...(window.__sunoAncestryOverlayV58||{}),open:false,lastClose:Date.now()
       };
     };
     const scheduleClose=()=> {
@@ -3384,10 +3447,21 @@ function playlistLikes() {
         if(entry.cycle)shortId.classList.add('suno-ancestry-cycle');
         copy.append(title,shortId);
 
+        const kindBlock=document.createElement('span');
+        kindBlock.className='suno-ancestry-kind-block';
         const kind=document.createElement('span');
         kind.className='suno-ancestry-kind';
         kind.textContent=lnDisplayKind(entry.kind);
-        item.append(artwork,copy,kind);
+        kindBlock.appendChild(kind);
+        const relationTime=lnFormatRelationTime(entry.continueAt);
+        if((entry.kind==='extend'||entry.kind==='continue')&&relationTime) {
+          const time=document.createElement('span');
+          time.className='suno-ancestry-time';
+          time.textContent=`at ${relationTime}`;
+          time.title=`Extended from ${relationTime}`;
+          kindBlock.appendChild(time);
+        }
+        item.append(artwork,copy,kindBlock);
 
         if(canSearch)item.addEventListener('click',async event=> {
           event.preventDefault();
@@ -3410,7 +3484,7 @@ function playlistLikes() {
         list.appendChild(more);
       }
       position(row,overlay);
-      window.__sunoAncestryOverlayV57={
+      window.__sunoAncestryOverlayV58={
         open:true,songId:id,entries:tree.entries.length,truncated:tree.truncated,
         workspaceSongs:workspaceOrder().length,knownSourceLists:lnSources.size,lastOpen:Date.now()
       };
@@ -3884,4 +3958,4 @@ let raf=0, sched=()=>raf||(raf=requestAnimationFrame(()=> {
   })
 })();
 
-//# sourceURL=suno-tweaks-v57-exact-sidebar-credits.js
+//# sourceURL=suno-tweaks-v58-extend-timestamp-popup.js
