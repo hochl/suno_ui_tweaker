@@ -1,5 +1,5 @@
 /**
- * Suno Tweaks v51 — readable local script
+ * Suno Tweaks v53 — readable local script
  *
  * Loaded by the persistent local-file bookmarklet. The script keeps the accepted
  * layout, playlist, title-edit and title-expansion behaviour while adding a compact
@@ -17,9 +17,9 @@
  *
  * Debug objects:
  * - window.__sunoLocalScriptLoader     — loader status
- * - window.__sunoWorkspaceIndexV51     — workspace indexing status
- * - window.__sunoAncestryOverlayV51    — ancestry overlay status
- * - window.__sunoAncestryNavigationDiagnosticV51 — navigation event log
+ * - window.__sunoWorkspaceIndexV53     — workspace indexing status
+ * - window.__sunoAncestryOverlayV53    — ancestry overlay status
+ * - window.__sunoAncestryNavigationDiagnosticV53 — navigation event log
  */
 
 (()=> {
@@ -898,6 +898,13 @@ function playlistLikes() {
     lastVisibleScan:0,
     reactScanScheduled:false,
     fetchHookInstalled:false,
+    feedController:null,
+    feedControllerScore:0,
+    feedPreloadPromise:null,
+    feedPreloadDone:false,
+    feedPreloadPages:0,
+    feedPreloadAttempts:0,
+    feedPreloadLastGrowth:0,
     indexGeneration:0
   };
 
@@ -1389,13 +1396,83 @@ function playlistLikes() {
     }
   }
 
+  const WORKSPACE_DEFAULT_CREATE_KEY='__suno_default_create__';
+
   function workspaceIdFromLocation() {
     try { return lnNorm(new URL(location.href).searchParams.get('wid')); }
     catch(error) { return ''; }
   }
 
+  function workspaceIdFromSelectedDom() {
+    const selectors=[
+      'a[aria-current="page"][href*="wid="]',
+      'a[aria-selected="true"][href*="wid="]',
+      'a[data-state="active"][href*="wid="]',
+      '[data-state="active"] a[href*="wid="]',
+      '[aria-selected="true"] a[href*="wid="]',
+      '[data-active="true"] a[href*="wid="]'
+    ];
+    for(const selector of selectors) {
+      for(const anchor of document.querySelectorAll(selector)) {
+        try {
+          const id=lnNorm(new URL(anchor.href,location.href).searchParams.get('wid'));
+          if(id)return id;
+        } catch(error) {}
+      }
+    }
+    return '';
+  }
+
+  function workspaceIdFromKnownRows() {
+    const counts=new Map();
+    for(const row of document.querySelectorAll('[data-testid="clip-row"]')) {
+      const songId=lnRowId(row);
+      const id=lnNorm(lnSongInfo.get(songId)?.workspaceId);
+      if(id)counts.set(id,(counts.get(id)||0)+1);
+    }
+    const ranked=[...counts.entries()].sort((a,b)=>b[1]-a[1]);
+    return ranked[0]?.[1]>=2?ranked[0][0]:'';
+  }
+
+  function workspaceIsCreateRoute() {
+    return /^\/create(?:\/|$)/i.test(location.pathname);
+  }
+
+  function workspaceIsFallbackId(id=workspaceState.id) {
+    return id===WORKSPACE_DEFAULT_CREATE_KEY;
+  }
+
+  function workspaceIdFromPage() {
+    return workspaceIdFromLocation()||workspaceIdFromSelectedDom()||workspaceIdFromKnownRows();
+  }
+
+  function workspaceAdoptRealId(id, source='page') {
+    id=lnNorm(id);
+    if(!id)return '';
+    if(workspaceState.id===id)return id;
+
+    if(workspaceIsFallbackId()) {
+      // Keep everything already learned from the default Create route. Suno often
+      // omits ?wid= for the selected/default workspace and exposes the UUID only
+      // later through row metadata or React state.
+      workspaceState.id=id;
+      workspaceState.identitySource=source;
+      workspaceState.indexGeneration++;
+      workspaceState.fetchedUrls.clear();
+      workspaceState.pendingUrls.clear();
+      workspaceState.indexingPromise=null;
+      workspaceState.feedPreloadDone=false;
+      return id;
+    }
+
+    workspaceReset(id);
+    workspaceState.identitySource=source;
+    return id;
+  }
+
   function workspaceReset(id) {
     workspaceState.id=id;
+    workspaceState.identitySource=workspaceIsFallbackId(id)?'default-create-route':(id?'page':'');
     workspaceState.networkOrder=[];
     workspaceState.reactOrder=[];
     workspaceState.domOrder=[];
@@ -1417,13 +1494,33 @@ function playlistLikes() {
     workspaceState.lastReactScan=0;
     workspaceState.lastVisibleScan=0;
     workspaceState.reactScanScheduled=false;
+    workspaceState.feedController=null;
+    workspaceState.feedControllerScore=0;
+    workspaceState.feedPreloadPromise=null;
+    workspaceState.feedPreloadDone=false;
+    workspaceState.feedPreloadPages=0;
+    workspaceState.feedPreloadAttempts=0;
+    workspaceState.feedPreloadLastGrowth=0;
     workspaceState.indexGeneration++;
   }
 
   function workspaceEnsureCurrent() {
-    const id=workspaceIdFromLocation();
-    if(id!==workspaceState.id)workspaceReset(id);
-    return id;
+    const discovered=workspaceIdFromPage();
+    if(discovered) {
+      if(discovered!==workspaceState.id)return workspaceAdoptRealId(discovered,'page');
+      return discovered;
+    }
+
+    if(workspaceIsCreateRoute()) {
+      // The current Suno Create route may omit ?wid even though a workspace is
+      // selected. Use a stable internal identity so indexing, React inspection
+      // and lazy-page preloading can start immediately instead of remaining null.
+      if(!workspaceState.id)workspaceReset(WORKSPACE_DEFAULT_CREATE_KEY);
+      return workspaceState.id;
+    }
+
+    if(workspaceState.id)workspaceReset('');
+    return '';
   }
 
   function workspaceMarkMember(id) {
@@ -1478,7 +1575,8 @@ function playlistLikes() {
   function workspaceHasSong(id) {
     id=lnNorm(id);
     if(!id)return false;
-    return Boolean(lnVisibleRow(id)||workspaceState.memberSet.has(id)||
+    const info=lnSongInfo.get(id)||{};
+    return Boolean(lnVisibleRow(id)||info.workspaceId===workspaceState.id||workspaceState.memberSet.has(id)||
       workspaceState.networkSet.has(id)||workspaceState.reactSet.has(id)||workspaceState.domSet.has(id));
   }
 
@@ -1595,6 +1693,33 @@ function playlistLikes() {
     }
   }
 
+  function workspaceRememberIdArray(array, source='network', context='', path='') {
+    if(!Array.isArray(array)||array.length<2)return false;
+    const key=String(path||'').split('.').pop().toLowerCase();
+    // Plain UUID arrays are only trusted under explicit workspace-song keys.
+    // This recovers complete project catalogues such as `clip_ids` without
+    // treating attribution, history or arbitrary API ID arrays as list order.
+    if(!/^(?:clip_ids?|song_ids?|generation_ids?|workspace_clip_ids?|project_clip_ids?)$/.test(key))return false;
+    const ids=array.map(lnNorm).filter(Boolean);
+    if(ids.length<2||ids.length/array.length<0.8)return false;
+
+    const unique=[];
+    for(const id of ids)if(!unique.includes(id))unique.push(id);
+    if(unique.length<2)return false;
+
+    const signature=`ids:${unique.join('|')}`;
+    if(!workspaceState.sequenceKeys.has(signature)) {
+      workspaceState.sequenceKeys.add(signature);
+      workspaceState.sequences.push({
+        ids:unique,source:`${source}-id-list`,context:String(context||''),
+        path:String(path||''),seenAt:Date.now(),trustedIdList:true
+      });
+    }
+    for(const id of unique)workspaceAppendOrder(id,source);
+    workspaceScheduleSongDetails();
+    return true;
+  }
+
   function workspaceIndexPayload(value, options={}) {
     const source=options.source||'network';
     const allowOrder=options.allowOrder!==false;
@@ -1614,7 +1739,10 @@ function playlistLikes() {
       seen.add(node);
 
       if(Array.isArray(node)) {
-        if(allowOrder)workspaceRememberSequence(node,source,options.context||'',path||context);
+        if(allowOrder) {
+          workspaceRememberIdArray(node,source,options.context||'',path||context);
+          workspaceRememberSequence(node,source,options.context||'',path||context);
+        }
         for(const item of node) {
           if(item&&typeof item==='object')workspaceMarkObjectMembership(item);
           if(item&&typeof item==='object')lnRecord(item);
@@ -1680,6 +1808,87 @@ function playlistLikes() {
     workspaceState.lastVisibleScan=Date.now();
   }
 
+  function workspaceVisibleSongIds() {
+    return new Set($('[data-testid="clip-row"]').map(row=>lnRowId(row)).filter(Boolean));
+  }
+
+  function workspaceCollectCandidateIds(value, limit=1800) {
+    const ids=[];
+    const seen=new WeakSet();
+    let visited=0;
+    const walk=(node,depth=0)=> {
+      if(node==null||depth>11||visited++>9000||ids.length>=limit)return;
+      const direct=lnNorm(node);
+      if(direct) { if(!ids.includes(direct))ids.push(direct); return; }
+      if(typeof node!=='object'||seen.has(node))return;
+      seen.add(node);
+      if(Array.isArray(node)) {
+        for(const item of node)walk(item,depth+1);
+        return;
+      }
+      let keys;
+      try { keys=Object.keys(node); } catch(error) { return; }
+      const priority=['data','pages','clips','songs','feed','generations','items','results','records'];
+      keys.sort((a,b)=>priority.indexOf(a)===-1?1:priority.indexOf(b)===-1?-1:priority.indexOf(a)-priority.indexOf(b));
+      for(const key of keys) {
+        if(['stateNode','alternate','return','child','sibling','_owner'].includes(key))continue;
+        let child;
+        try { child=node[key]; } catch(error) { continue; }
+        if(typeof child==='function')continue;
+        walk(child,depth+1);
+      }
+    };
+    walk(value);
+    return ids;
+  }
+
+  function workspaceInspectInfiniteController(value, path='react') {
+    if(!value||typeof value!=='object')return;
+    const visible=workspaceVisibleSongIds();
+    const seen=new WeakSet();
+    let visited=0;
+
+    const walk=(node,depth=0,currentPath=path)=> {
+      if(!node||typeof node!=='object'||depth>12||visited++>12000||seen.has(node))return;
+      seen.add(node);
+
+      if(typeof node.fetchNextPage==='function') {
+        const data=node.data?.pages||node.pages||node.data||null;
+        const ids=workspaceCollectCandidateIds(data,1600);
+        const overlap=ids.reduce((count,id)=>count+(visible.has(id)?1:0),0);
+        const memberHits=ids.reduce((count,id)=>count+(workspaceHasSong(id)?1:0),0);
+        const pathBonus=/(?:clip|song|feed|generation|workspace|project)/i.test(currentPath)?35:0;
+        const hasNext=Boolean(node.hasNextPage);
+        const score=overlap*220+Math.min(memberHits,20)*18+Math.min(ids.length,100)+pathBonus+(hasNext?40:0);
+        if((overlap>=1||memberHits>=2||pathBonus)&&score>=workspaceState.feedControllerScore) {
+          workspaceState.feedController={
+            object:node,
+            fetchNextPage:node.fetchNextPage,
+            hasNextPage:hasNext,
+            isFetchingNextPage:Boolean(node.isFetchingNextPage),
+            ids,
+            path:currentPath,
+            seenAt:Date.now()
+          };
+          workspaceState.feedControllerScore=score;
+        }
+      }
+
+      let keys;
+      try { keys=Object.keys(node); } catch(error) { return; }
+      const priority=['data','pages','query','result','infiniteQuery','feed','clips','songs','children'];
+      keys.sort((a,b)=>priority.indexOf(a)===-1?1:priority.indexOf(b)===-1?-1:priority.indexOf(a)-priority.indexOf(b));
+      for(const key of keys) {
+        if(['stateNode','alternate','return','child','sibling','_owner'].includes(key))continue;
+        let child;
+        try { child=node[key]; } catch(error) { continue; }
+        if(typeof child==='function')continue;
+        walk(child,depth+1,`${currentPath}.${key}`);
+      }
+    };
+    walk(value);
+  }
+
   function workspaceScanReactState() {
     const id=workspaceEnsureCurrent();
     if(!id)return;
@@ -1711,6 +1920,7 @@ function playlistLikes() {
         try { value=node[key]; } catch(error) { continue; }
         if(key.startsWith('__reactProps$')) {
           workspaceIndexPayload(value,{source:'react',allowOrder:true,max:5000});
+          workspaceInspectInfiniteController(value,`props.${key}`);
           payloadCount++;
         } else {
           let fiber=value;
@@ -1718,6 +1928,8 @@ function playlistLikes() {
           while(fiber&&steps++<24&&payloadCount<20) {
             workspaceIndexPayload(fiber.memoizedProps,{source:'react',allowOrder:true,max:5000});
             workspaceIndexPayload(fiber.memoizedState,{source:'react',allowOrder:true,max:5000});
+            workspaceInspectInfiniteController(fiber.memoizedProps,`fiber.props.${steps}`);
+            workspaceInspectInfiniteController(fiber.memoizedState,`fiber.state.${steps}`);
             payloadCount+=2;
             fiber=fiber.return;
           }
@@ -1736,6 +1948,65 @@ function playlistLikes() {
     };
     if(typeof requestIdleCallback==='function')requestIdleCallback(runScan,{timeout:900});
     else window.setTimeout(runScan,120);
+  }
+
+  async function workspacePreloadReactFeed() {
+    const id=workspaceEnsureCurrent();
+    if(!id||workspaceState.feedPreloadDone)return;
+    const generation=workspaceState.indexGeneration;
+    let stagnant=0;
+
+    for(let page=0;page<80;page++) {
+      if(generation!==workspaceState.indexGeneration)return;
+      workspaceState.feedController=null;
+      workspaceState.feedControllerScore=0;
+      workspaceScanReactState();
+      const controller=workspaceState.feedController;
+      workspaceState.feedPreloadAttempts++;
+
+      if(!controller) {
+        // React may not have exposed the infinite-query result yet. Retry on later
+        // refresh passes rather than moving the visible list to provoke loading.
+        if(page===0)return;
+        break;
+      }
+      if(!controller.hasNextPage) {
+        workspaceState.feedPreloadDone=true;
+        break;
+      }
+
+      const beforeMembers=workspaceState.memberSet.size;
+      const beforeMetadata=lnSongInfo.size;
+      try {
+        const result=await controller.fetchNextPage({cancelRefetch:false});
+        if(result)workspaceIndexPayload(result,{
+          source:'react-preload',allowOrder:true,context:'react.fetchNextPage',max:140000
+        });
+      } catch(error) {
+        break;
+      }
+      if(generation!==workspaceState.indexGeneration)return;
+
+      workspaceState.feedPreloadPages++;
+      await new Promise(resolve=>window.setTimeout(resolve,160));
+      workspaceScanReactState();
+      workspaceScheduleSongDetails();
+
+      const growth=(workspaceState.memberSet.size-beforeMembers)+(lnSongInfo.size-beforeMetadata);
+      workspaceState.feedPreloadLastGrowth=growth;
+      if(growth<=0)stagnant++;
+      else stagnant=0;
+      if(stagnant>=3)break;
+    }
+  }
+
+  function workspaceScheduleFeedPreload() {
+    const id=workspaceEnsureCurrent();
+    if(!id||workspaceState.feedPreloadDone||workspaceState.feedPreloadPromise)return;
+    workspaceState.feedPreloadPromise=Promise.resolve().then(workspacePreloadReactFeed).finally(()=> {
+      workspaceState.feedPreloadPromise=null;
+      workspaceDebugState();
+    });
   }
 
   function workspaceQueueTask(key, task) {
@@ -1766,11 +2037,13 @@ function playlistLikes() {
     try {
       const url=new URL(rawUrl,location.href);
       if(url.hostname!=='studio-api-prod.suno.com')return false;
-      return url.pathname.includes(`/api/project/${workspaceState.id}`)||
+      const realId=lnNorm(workspaceState.id);
+      const exactProject=realId&&url.pathname===`/api/project/${realId}`;
+      return Boolean(exactProject||
         /\/api\/feed\/v3\b/.test(url.pathname)||
         /\/api\/clips\/get_songs_by_ids\b/.test(url.pathname)||
         /\/api\/clip\//.test(url.pathname)||
-        /\/api\/clips\/[0-9a-f-]{36}\/attribution/.test(url.pathname);
+        /\/api\/clips\/[0-9a-f-]{36}\/attribution/.test(url.pathname));
     } catch(error) { return false; }
   }
 
@@ -1780,7 +2053,9 @@ function playlistLikes() {
       const url=new URL(rawUrl,location.href);
       if(url.hostname!=='studio-api-prod.suno.com')return false;
       if(/\/pinned-clips(?:[/?#]|$)/i.test(url.pathname))return false;
-      return url.pathname===`/api/project/${workspaceState.id}`||/\/api\/feed\/v3(?:[/?#]|$)/i.test(url.pathname);
+      const realId=lnNorm(workspaceState.id);
+      return Boolean((realId&&url.pathname===`/api/project/${realId}`)||
+        /\/api\/feed\/v3(?:[/?#]|$)/i.test(url.pathname));
     } catch(error) { return false; }
   }
 
@@ -1842,14 +2117,14 @@ function playlistLikes() {
   }
 
   function workspaceInstallFetchCapture() {
-    for(const key of ['__sunoWorkspaceFetchCaptureV43','__sunoWorkspaceFetchCaptureV44','__sunoWorkspaceFetchCaptureV46','__sunoWorkspaceFetchCaptureV47','__sunoWorkspaceFetchCaptureV49','__sunoWorkspaceFetchCaptureV50']) {
+    for(const key of ['__sunoWorkspaceFetchCaptureV43','__sunoWorkspaceFetchCaptureV44','__sunoWorkspaceFetchCaptureV46','__sunoWorkspaceFetchCaptureV47','__sunoWorkspaceFetchCaptureV49','__sunoWorkspaceFetchCaptureV50','__sunoWorkspaceFetchCaptureV51','__sunoWorkspaceFetchCaptureV52']) {
       const oldHook=window[key];
       if(oldHook?.wrapped&&window.fetch===oldHook.wrapped&&typeof oldHook.originalFetch==='function') {
         window.fetch=oldHook.originalFetch;
       }
       try { delete window[key]; } catch(error) {}
     }
-    if(window.__sunoWorkspaceFetchCaptureV51)return;
+    if(window.__sunoWorkspaceFetchCaptureV53)return;
     const originalFetch=window.fetch;
     if(typeof originalFetch!=='function')return;
 
@@ -1872,19 +2147,20 @@ function playlistLikes() {
     };
     wrapped.__sunoOriginalFetch=originalFetch;
     window.fetch=wrapped;
-    window.__sunoWorkspaceFetchCaptureV51={originalFetch,wrapped};
+    window.__sunoWorkspaceFetchCaptureV53={originalFetch,wrapped};
     workspaceState.fetchHookInstalled=true;
   }
 
   function workspaceCandidateUrls() {
     const id=workspaceEnsureCurrent();
-    if(!id)return [];
+    const realId=lnNorm(id);
+    if(!realId)return [];
 
     // Only refetch endpoints whose semantics are complete in the URL itself.
     // Suno's /api/feed/v3 request may be a POST with a workspace-specific body.
     // Replaying that resource entry as a plain GET can return an unrelated feed
     // and corrupt the workspace order used for virtual-list navigation.
-    return [`${STUDIO_API_BASE}/api/project/${id}`];
+    return [`${STUDIO_API_BASE}/api/project/${realId}`];
   }
 
   async function workspaceFetchSongBatch(ids) {
@@ -1997,6 +2273,7 @@ function playlistLikes() {
     }
     if(generation!==workspaceState.indexGeneration)return;
     workspaceScheduleSongDetails();
+    workspaceScheduleFeedPreload();
   }
 
   function workspaceKickIndexing() {
@@ -2042,8 +2319,10 @@ function playlistLikes() {
   }
 
   function workspaceDebugState(extra={}) {
-    window.__sunoWorkspaceIndexV51={
+    window.__sunoWorkspaceIndexV53={
       workspaceId:workspaceState.id,
+      workspaceIdentitySource:workspaceState.identitySource||'',
+      workspaceUsesDefaultRoute:workspaceIsFallbackId(),
       orderSource:workspaceOrderRecord().source,
       indexedSongs:workspaceOrder().length,
       metadataSongs:lnSongInfo.size,
@@ -2056,6 +2335,13 @@ function playlistLikes() {
       activeRequests:workspaceState.activeRequests,
       queuedRequests:workspaceState.queue.length,
       songBatchDisabled:workspaceState.failedSongBatch,
+      feedControllerFound:Boolean(workspaceState.feedController),
+      feedControllerPath:workspaceState.feedController?.path||'',
+      feedPreloadPages:workspaceState.feedPreloadPages,
+      feedPreloadDone:workspaceState.feedPreloadDone,
+      feedPreloadActive:Boolean(workspaceState.feedPreloadPromise),
+      feedPreloadAttempts:workspaceState.feedPreloadAttempts,
+      feedPreloadLastGrowth:workspaceState.feedPreloadLastGrowth,
       lastUpdate:Date.now(),
       ...extra
     };
@@ -2073,7 +2359,7 @@ function playlistLikes() {
   const ANCESTRY_MAX_DEPTH=10;
   const ANCESTRY_MAX_ENTRIES=100;
   const ANCESTRY_POINTER_OFFSET=14;
-  const NAV_DIAGNOSTIC_KEY='__sunoAncestryNavigationDiagnosticV51';
+  const NAV_DIAGNOSTIC_KEY='__sunoAncestryNavigationDiagnosticV53';
   const navDiagnosticState={events:[],activeTarget:'',startedAt:Date.now()};
 
   function navDiagnosticRows() {
@@ -2122,15 +2408,15 @@ function playlistLikes() {
 
   function installNavigationDiagnosticApi() {
     window[NAV_DIAGNOSTIC_KEY]={
-      version:51,
+      version:52,
       events:navDiagnosticState.events,
       snapshot:(label='manual')=>navDiagnosticRecord(label,navDiagnosticState.activeTarget),
       clear:()=>{navDiagnosticState.events.length=0;navDiagnosticState.startedAt=Date.now();},
       export:()=>JSON.stringify({
-        version:51,
+        version:52,
         url:location.href,
         exportedAt:new Date().toISOString(),
-        workspace:window.__sunoWorkspaceIndexV51||null,
+        workspace:window.__sunoWorkspaceIndexV53||null,
         events:navDiagnosticState.events
       },null,2)
     };
@@ -2483,6 +2769,22 @@ function playlistLikes() {
     return null;
   }
 
+  async function workspaceWaitForCatalogueSong(id, timeout=10000) {
+    id=lnNorm(id);
+    if(!id)return false;
+    const start=Date.now();
+    while(Date.now()-start<timeout) {
+      const info=lnSongInfo.get(id)||{};
+      if(workspaceHasSong(id)&&info.createdAt)return true;
+      workspaceScheduleFeedPreload();
+      const pending=workspaceState.feedPreloadPromise;
+      if(pending)await Promise.race([pending,new Promise(resolve=>window.setTimeout(resolve,220))]);
+      else await new Promise(resolve=>window.setTimeout(resolve,220));
+      if(workspaceState.feedPreloadDone)break;
+    }
+    return workspaceHasSong(id);
+  }
+
   async function workspaceJumpToSong(id) {
     id=lnNorm(id);
     if(!id)return null;
@@ -2497,6 +2799,13 @@ function playlistLikes() {
     }
 
     await workspaceBuildIndex().catch(error=>navDiagnosticRecord('jump:index-error',id,{message:String(error?.message||error)}));
+    if(!workspaceHasSong(id)||!lnSongInfo.get(id)?.createdAt) {
+      navDiagnosticRecord('jump:waiting-for-catalogue',id,{
+        feedPreloadPages:workspaceState.feedPreloadPages,
+        feedControllerFound:Boolean(workspaceState.feedController)
+      });
+      await workspaceWaitForCatalogueSong(id,10000);
+    }
     workspaceIndexVisibleRows();
     const position=workspaceSequencePosition(id);
     if(!position||!Number.isFinite(position.top)) {
@@ -2579,8 +2888,8 @@ function playlistLikes() {
       overlay?.remove();
       overlay=null;
       activeRow=null;
-      window.__sunoAncestryOverlayV51={
-        ...(window.__sunoAncestryOverlayV51||{}),open:false,lastClose:Date.now()
+      window.__sunoAncestryOverlayV53={
+        ...(window.__sunoAncestryOverlayV53||{}),open:false,lastClose:Date.now()
       };
     };
     const scheduleClose=()=> {
@@ -2718,7 +3027,7 @@ function playlistLikes() {
         list.appendChild(more);
       }
       position(row,overlay);
-      window.__sunoAncestryOverlayV51={
+      window.__sunoAncestryOverlayV53={
         open:true,songId:id,entries:tree.entries.length,truncated:tree.truncated,
         workspaceSongs:workspaceOrder().length,knownSourceLists:lnSources.size,lastOpen:Date.now()
       };
@@ -3188,4 +3497,4 @@ let raf=0, sched=()=>raf||(raf=requestAnimationFrame(()=> {
   })
 })();
 
-//# sourceURL=suno-tweaks-v51-chronological-workspace-navigation.js
+//# sourceURL=suno-tweaks-v53-default-workspace-detection.js
