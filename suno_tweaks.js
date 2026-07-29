@@ -1,20 +1,25 @@
 /**
- * Suno Tweaks v41 — readable local script
+ * Suno Tweaks v51 — readable local script
  *
  * Loaded by the persistent local-file bookmarklet. The script keeps the accepted
- * v22 layout/playlist/title-edit behavior and adds the locally learned Create-page
- * lineage colors that were verified with the direct console test.
+ * layout, playlist, title-edit and title-expansion behaviour while adding a compact
+ * multi-source ancestry browser for the Create workspace.
  *
  * Design principles:
- * - No external network requests are made by this script.
+ * - Background family colouring has been removed completely.
+ * - Workspace and clip requests are deduplicated and processed outside the DOM observer.
+ * - At most two background requests run simultaneously.
  * - Existing observers from older versions are disconnected before initialization.
  * - DOM changes are reapplied through one throttled MutationObserver.
- * - Lineage relations are learned locally and stored in sessionStorage.
- * - Related Create rows receive a stable background color and left inset marker.
+ * - Known source relations and song metadata are cached in sessionStorage.
+ * - Workspace navigation uses measured rows, validated clip sequences and created-at chronology.
+ * - Browser scroll anchoring is disabled only during a controlled ancestry jump.
  *
  * Debug objects:
- * - window.__sunoLocalScriptLoader  — loader status
- * - window.__sunoLineageV41        — lineage/coloring status
+ * - window.__sunoLocalScriptLoader     — loader status
+ * - window.__sunoWorkspaceIndexV51     — workspace indexing status
+ * - window.__sunoAncestryOverlayV51    — ancestry overlay status
+ * - window.__sunoAncestryNavigationDiagnosticV51 — navigation event log
  */
 
 (()=> {
@@ -88,42 +93,25 @@ li>[role="button"][aria-roledescription="sortable"] .clip-row .clip-image-contai
 [data-suno-pl-like="1"]{display:inline-flex!important;align-items:center!important;white-space:nowrap!important}
 [data-testid="clip-row"] button[aria-label="Edit title"]{display:inline-flex!important;opacity:1!important;visibility:visible!important;pointer-events:auto!important;transform:none!important;position:relative!important;inset:auto!important;width:1.5rem!important;min-width:1.5rem!important;max-width:none!important;height:1.5rem!important;flex:0 0 1.5rem!important;margin-left:.25rem!important;clip-path:none!important}
 [data-testid="clip-row"] div:has(>button[aria-label="Edit title"]){display:flex!important;align-items:center!important;overflow:visible!important;visibility:visible!important;opacity:1!important}
-div[data-testid="clip-row"][data-suno-lineage-color="0"]{background:hsla(0,30%,24%,.76)!important;box-shadow:inset 4px 0 0 hsla(0,44%,50%,.62)!important;border-radius:.5rem!important}
-div[data-testid="clip-row"][data-suno-lineage-color="1"]{background:hsla(138,32%,25%,.76)!important;box-shadow:inset 4px 0 0 hsla(138,46%,51%,.62)!important;border-radius:.5rem!important}
-div[data-testid="clip-row"][data-suno-lineage-color="2"]{background:hsla(275,34%,26%,.76)!important;box-shadow:inset 4px 0 0 hsla(275,48%,52%,.62)!important;border-radius:.5rem!important}
-div[data-testid="clip-row"][data-suno-lineage-color="3"]{background:hsla(53,36%,24%,.76)!important;box-shadow:inset 4px 0 0 hsla(53,50%,53%,.62)!important;border-radius:.5rem!important}
-div[data-testid="clip-row"][data-suno-lineage-color="4"]{background:hsla(190,30%,25%,.76)!important;box-shadow:inset 4px 0 0 hsla(190,44%,50%,.62)!important;border-radius:.5rem!important}
-div[data-testid="clip-row"][data-suno-lineage-color="5"]{background:hsla(328,32%,26%,.76)!important;box-shadow:inset 4px 0 0 hsla(328,46%,51%,.62)!important;border-radius:.5rem!important}
-div[data-testid="clip-row"][data-suno-lineage-color="6"]{background:hsla(105,34%,24%,.76)!important;box-shadow:inset 4px 0 0 hsla(105,48%,52%,.62)!important;border-radius:.5rem!important}
-div[data-testid="clip-row"][data-suno-lineage-color="7"]{background:hsla(243,36%,25%,.76)!important;box-shadow:inset 4px 0 0 hsla(243,50%,53%,.62)!important;border-radius:.5rem!important}
-div[data-testid="clip-row"][data-suno-lineage-color="8"]{background:hsla(20,30%,26%,.76)!important;box-shadow:inset 4px 0 0 hsla(20,44%,50%,.62)!important;border-radius:.5rem!important}
-div[data-testid="clip-row"][data-suno-lineage-color="9"]{background:hsla(158,32%,24%,.76)!important;box-shadow:inset 4px 0 0 hsla(158,46%,51%,.62)!important;border-radius:.5rem!important}
-div[data-testid="clip-row"][data-suno-lineage-color="10"]{background:hsla(295,34%,25%,.76)!important;box-shadow:inset 4px 0 0 hsla(295,48%,52%,.62)!important;border-radius:.5rem!important}
-div[data-testid="clip-row"][data-suno-lineage-color="11"]{background:hsla(73,36%,26%,.76)!important;box-shadow:inset 4px 0 0 hsla(73,50%,53%,.62)!important;border-radius:.5rem!important}
-div[data-testid="clip-row"][data-suno-lineage-color="12"]{background:hsla(210,30%,24%,.76)!important;box-shadow:inset 4px 0 0 hsla(210,44%,50%,.62)!important;border-radius:.5rem!important}
-div[data-testid="clip-row"][data-suno-lineage-color="13"]{background:hsla(348,32%,25%,.76)!important;box-shadow:inset 4px 0 0 hsla(348,46%,51%,.62)!important;border-radius:.5rem!important}
-div[data-testid="clip-row"][data-suno-lineage-color="14"]{background:hsla(125,34%,26%,.76)!important;box-shadow:inset 4px 0 0 hsla(125,48%,52%,.62)!important;border-radius:.5rem!important}
-div[data-testid="clip-row"][data-suno-lineage-color="15"]{background:hsla(263,36%,24%,.76)!important;box-shadow:inset 4px 0 0 hsla(263,50%,53%,.62)!important;border-radius:.5rem!important}
-div[data-testid="clip-row"][data-suno-lineage-color="16"]{background:hsla(40,30%,25%,.76)!important;box-shadow:inset 4px 0 0 hsla(40,44%,50%,.62)!important;border-radius:.5rem!important}
-div[data-testid="clip-row"][data-suno-lineage-color="17"]{background:hsla(178,32%,26%,.76)!important;box-shadow:inset 4px 0 0 hsla(178,46%,51%,.62)!important;border-radius:.5rem!important}
-div[data-testid="clip-row"][data-suno-lineage-color="18"]{background:hsla(315,34%,24%,.76)!important;box-shadow:inset 4px 0 0 hsla(315,48%,52%,.62)!important;border-radius:.5rem!important}
-div[data-testid="clip-row"][data-suno-lineage-color="19"]{background:hsla(93,36%,25%,.76)!important;box-shadow:inset 4px 0 0 hsla(93,50%,53%,.62)!important;border-radius:.5rem!important}
-div[data-testid="clip-row"][data-suno-lineage-color="20"]{background:hsla(230,30%,26%,.76)!important;box-shadow:inset 4px 0 0 hsla(230,44%,50%,.62)!important;border-radius:.5rem!important}
-div[data-testid="clip-row"][data-suno-lineage-color="21"]{background:hsla(8,32%,24%,.76)!important;box-shadow:inset 4px 0 0 hsla(8,46%,51%,.62)!important;border-radius:.5rem!important}
-div[data-testid="clip-row"][data-suno-lineage-color="22"]{background:hsla(145,34%,25%,.76)!important;box-shadow:inset 4px 0 0 hsla(145,48%,52%,.62)!important;border-radius:.5rem!important}
-div[data-testid="clip-row"][data-suno-lineage-color="23"]{background:hsla(283,36%,26%,.76)!important;box-shadow:inset 4px 0 0 hsla(283,50%,53%,.62)!important;border-radius:.5rem!important}
-div[data-testid="clip-row"][data-suno-lineage-color="24"]{background:hsla(60,30%,24%,.76)!important;box-shadow:inset 4px 0 0 hsla(60,44%,50%,.62)!important;border-radius:.5rem!important}
-div[data-testid="clip-row"][data-suno-lineage-color="25"]{background:hsla(198,32%,25%,.76)!important;box-shadow:inset 4px 0 0 hsla(198,46%,51%,.62)!important;border-radius:.5rem!important}
-div[data-testid="clip-row"][data-suno-lineage-color="26"]{background:hsla(335,34%,26%,.76)!important;box-shadow:inset 4px 0 0 hsla(335,48%,52%,.62)!important;border-radius:.5rem!important}
-div[data-testid="clip-row"][data-suno-lineage-color="27"]{background:hsla(113,36%,24%,.76)!important;box-shadow:inset 4px 0 0 hsla(113,50%,53%,.62)!important;border-radius:.5rem!important}
-div[data-testid="clip-row"][data-suno-lineage-color="28"]{background:hsla(250,30%,25%,.76)!important;box-shadow:inset 4px 0 0 hsla(250,44%,50%,.62)!important;border-radius:.5rem!important}
-div[data-testid="clip-row"][data-suno-lineage-color="29"]{background:hsla(28,32%,26%,.76)!important;box-shadow:inset 4px 0 0 hsla(28,46%,51%,.62)!important;border-radius:.5rem!important}
-div[data-testid="clip-row"][data-suno-lineage-color="30"]{background:hsla(165,34%,24%,.76)!important;box-shadow:inset 4px 0 0 hsla(165,48%,52%,.62)!important;border-radius:.5rem!important}
-div[data-testid="clip-row"][data-suno-lineage-color="31"]{background:hsla(303,36%,25%,.76)!important;box-shadow:inset 4px 0 0 hsla(303,50%,53%,.62)!important;border-radius:.5rem!important}
-div[data-testid="clip-row"][data-suno-lineage-color="32"]{background:hsla(80,30%,26%,.76)!important;box-shadow:inset 4px 0 0 hsla(80,44%,50%,.62)!important;border-radius:.5rem!important}
-div[data-testid="clip-row"][data-suno-lineage-color="33"]{background:hsla(218,32%,24%,.76)!important;box-shadow:inset 4px 0 0 hsla(218,46%,51%,.62)!important;border-radius:.5rem!important}
-div[data-testid="clip-row"][data-suno-lineage-color="34"]{background:hsla(355,34%,25%,.76)!important;box-shadow:inset 4px 0 0 hsla(355,48%,52%,.62)!important;border-radius:.5rem!important}
-div[data-testid="clip-row"][data-suno-lineage-color="35"]{background:hsla(133,36%,26%,.76)!important;box-shadow:inset 4px 0 0 hsla(133,50%,53%,.62)!important;border-radius:.5rem!important}
+#suno-create-ancestry-overlay{position:fixed!important;z-index:2147483646!important;box-sizing:border-box!important;overflow:auto!important;overscroll-behavior:contain!important;max-height:min(56vh,520px)!important;padding:6px!important;border:1px solid rgba(255,255,255,.13)!important;border-radius:10px!important;background:rgba(13,13,15,.97)!important;color:#f5f5f6!important;box-shadow:0 12px 34px rgba(0,0,0,.48)!important;backdrop-filter:blur(10px)!important;-webkit-backdrop-filter:blur(10px)!important}
+#suno-create-ancestry-overlay .suno-ancestry-header{display:flex!important;align-items:center!important;justify-content:space-between!important;gap:10px!important;padding:3px 7px 6px!important;font:600 11px/1.2 system-ui,sans-serif!important;color:rgba(255,255,255,.72)!important;text-transform:uppercase!important;letter-spacing:.045em!important}
+#suno-create-ancestry-overlay .suno-ancestry-list{display:flex!important;flex-direction:column!important;gap:2px!important}
+#suno-create-ancestry-overlay .suno-ancestry-entry{--suno-ancestry-depth:1;display:grid!important;grid-template-columns:34px minmax(0,1fr) auto!important;align-items:center!important;column-gap:7px!important;width:100%!important;min-height:42px!important;box-sizing:border-box!important;margin:0!important;padding:3px 7px 3px calc(7px + (var(--suno-ancestry-depth) - 1)*14px)!important;border:0!important;border-radius:7px!important;background:transparent!important;color:inherit!important;text-align:left!important;font-family:system-ui,sans-serif!important;cursor:default!important}
+#suno-create-ancestry-overlay .suno-ancestry-entry[data-available="true"]{cursor:pointer!important}
+#suno-create-ancestry-overlay .suno-ancestry-entry[data-available="true"]:hover,#suno-create-ancestry-overlay .suno-ancestry-entry[data-available="true"]:focus-visible{background:rgba(255,255,255,.10)!important;outline:none!important}
+#suno-create-ancestry-overlay .suno-ancestry-entry[data-available="false"]{opacity:.56!important}
+#suno-create-ancestry-overlay .suno-ancestry-entry[data-workspace-state="unknown"]{opacity:.82!important}
+#suno-create-ancestry-overlay .suno-ancestry-art{display:block!important;width:34px!important;height:34px!important;border-radius:5px!important;object-fit:cover!important;background:rgba(255,255,255,.08)!important}
+#suno-create-ancestry-overlay .suno-ancestry-art-placeholder{display:flex!important;align-items:center!important;justify-content:center!important;width:34px!important;height:34px!important;border-radius:5px!important;background:rgba(255,255,255,.08)!important;color:rgba(255,255,255,.38)!important;font-size:15px!important}
+#suno-create-ancestry-overlay .suno-ancestry-copy{display:flex!important;min-width:0!important;flex-direction:column!important;gap:1px!important}
+#suno-create-ancestry-overlay .suno-ancestry-title{min-width:0!important;overflow:hidden!important;text-overflow:ellipsis!important;white-space:nowrap!important;font-size:12.5px!important;font-weight:600!important;line-height:1.18!important;color:rgba(255,255,255,.94)!important}
+#suno-create-ancestry-overlay .suno-ancestry-id{overflow:hidden!important;text-overflow:ellipsis!important;white-space:nowrap!important;font-size:9.5px!important;line-height:1.1!important;color:rgba(255,255,255,.42)!important}
+#suno-create-ancestry-overlay .suno-ancestry-kind{align-self:center!important;max-width:92px!important;overflow:hidden!important;text-overflow:ellipsis!important;white-space:nowrap!important;padding:2px 5px!important;border-radius:999px!important;background:rgba(255,255,255,.07)!important;font-size:9px!important;line-height:1.1!important;color:rgba(255,255,255,.60)!important;text-transform:uppercase!important;letter-spacing:.035em!important}
+#suno-create-ancestry-overlay .suno-ancestry-cycle{color:#f0b36b!important}
+#suno-create-ancestry-overlay .suno-ancestry-status{padding:7px 9px!important;font:500 11px/1.35 system-ui,sans-serif!important;color:rgba(255,255,255,.62)!important}
+#suno-create-ancestry-overlay .suno-ancestry-more{padding:5px 8px!important;font:500 10px/1.2 system-ui,sans-serif!important;color:rgba(255,255,255,.54)!important}
+@keyframes suno-ancestry-jump-pulse{0%,100%{outline-color:transparent;filter:none}25%,70%{outline-color:rgba(255,255,255,.92);filter:brightness(1.22)}}
+[data-testid="clip-row"].suno-ancestry-jump-highlight{outline:2px solid transparent!important;outline-offset:2px!important;animation:suno-ancestry-jump-pulse 1.35s ease!important}
 `;
   function U(raw, onlySuno=false) {
     if(!raw)return"";
@@ -866,390 +854,1975 @@ function playlistLikes() {
     plRenderLikes();
     plLoadResourceData()
   }
-  let lnParents=new Map, lnKinds=new Map, lnRowSeen=new WeakMap, lnLastDetail=0, lnSaveTimer=0, LNSTORE="__suno_create_lineage_v26";
-  function lnNorm(v) {
-    let s="";
-    if(typeof v==="string")s=v;
-    else if(v&&typeof v==="object")s=v.id||v.clip_id||v.uuid||"";
-    s=String(s||"").replace(/^m_/, "").toLowerCase();
-    return/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(s)&&s!=="00000000-0000-0000-0000-000000000000"?s:""
+  // ---------------------------------------------------------------------------
+  // Multi-source relation store and proactive Create-workspace index
+  // ---------------------------------------------------------------------------
+  // The relation graph is intentionally separate from the removed background-colour
+  // feature. A child may have multiple direct sources. Shared ancestors are retained
+  // independently in every branch when the overlay renders the graph.
+  const ANCESTRY_STORE='__suno_create_ancestry_v43';
+  const LEGACY_LINEAGE_STORE='__suno_create_lineage_v26';
+  const STUDIO_API_BASE='https://studio-api-prod.suno.com';
+  const WORKSPACE_REQUEST_CONCURRENCY=2;
+  const WORKSPACE_BATCH_SIZE=35;
+
+  let lnSources=new Map();
+  let lnSongInfo=new Map();
+  let lnRowSeen=new WeakMap();
+  let lnLastDetail=0;
+  let lnSaveTimer=0;
+  let lnLoadingStore=false;
+
+  const workspaceState={
+    id:'',
+    networkOrder:[],
+    reactOrder:[],
+    domOrder:[],
+    networkSet:new Set(),
+    reactSet:new Set(),
+    domSet:new Set(),
+    memberSet:new Set(),
+    positionMap:new Map(),
+    sequences:[],
+    sequenceKeys:new Set(),
+    rowStep:111,
+    fetchedUrls:new Set(),
+    pendingUrls:new Map(),
+    requestedSongIds:new Set(),
+    failedSongBatch:false,
+    queue:[],
+    activeRequests:0,
+    indexingPromise:null,
+    lastKick:0,
+    lastReactScan:0,
+    lastVisibleScan:0,
+    reactScanScheduled:false,
+    fetchHookInstalled:false,
+    indexGeneration:0
+  };
+
+  function lnNorm(value) {
+    let text='';
+    if(typeof value==='string')text=value;
+    else if(value&&typeof value==='object')text=value.id||value.clip_id||value.uuid||'';
+    text=String(text||'').replace(/^m_/, '').toLowerCase();
+    return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(text)&&
+      text!=='00000000-0000-0000-0000-000000000000'?text:'';
   }
-  function lnLoad() {
-    try {
-      let d=JSON.parse(sessionStorage.getItem(LNSTORE)||"{}"), p=d.parents|| {
-      };
-      for(const[id, v]of Object.entries(p)) {
-        let a=lnNorm(id), b=lnNorm(v?.parent||v);
-        if(a&&b&&a!==b) {
-          lnParents.set(a, b);
-          if(v?.kind)lnKinds.set(a, String(v.kind))
-        }
+
+  function lnKindPriority(kind) {
+    const priorities={
+      cover:100, remix:98, sample:96, chop_sample:95, underpainting:94,
+      overpainting:94, stem_from:93, stemmed:93, stitch:92, concat:92,
+      extend:90, continue:90, section:88, infill:88, speed:86,
+      remaster:84, upsample:84, edit:80, edited:78, source:76,
+      reference:74, input:72, history:60, derived:40, root:10
+    };
+    return priorities[String(kind||'').toLowerCase()]||50;
+  }
+
+  function lnAddSource(childId, sourceId, kind='derived') {
+    childId=lnNorm(childId);
+    sourceId=lnNorm(sourceId);
+    kind=String(kind||'derived').replace(/_clip_id$/i, '').toLowerCase();
+    if(!childId||!sourceId||childId===sourceId)return false;
+
+    let sources=lnSources.get(childId);
+    if(!sources)lnSources.set(childId, sources=[]);
+
+    const existing=sources.find(source=>source.id===sourceId);
+    let changed=false;
+    if(existing) {
+      if(lnKindPriority(kind)>lnKindPriority(existing.kind)) {
+        existing.kind=kind;
+        changed=true;
       }
-    } catch(e) {
+    } else {
+      sources.push({id:sourceId, kind});
+      changed=true;
+    }
+
+    if(changed&&!lnLoadingStore)lnSave();
+    return changed;
+  }
+
+  function lnTimestamp(value) {
+    if(value===undefined||value===null||value==='')return 0;
+    if(typeof value==='number'&&Number.isFinite(value)) {
+      if(value>1e15)return Math.round(value/1000);
+      if(value<1e11)return Math.round(value*1000);
+      return Math.round(value);
+    }
+    const text=String(value).trim();
+    if(!text)return 0;
+    if(/^\d+(?:\.\d+)?$/.test(text))return lnTimestamp(Number(text));
+    const parsed=Date.parse(text);
+    return Number.isFinite(parsed)?parsed:0;
+  }
+
+  function lnRememberInfo(id, info={}) {
+    id=lnNorm(id);
+    if(!id)return false;
+
+    const previous=lnSongInfo.get(id)||{};
+    const title=String(info.title||previous.title||'').replace(/\s+/g, ' ').trim();
+    const image=String(info.image||previous.image||'').trim();
+    const createdAt=lnTimestamp(info.createdAt||info.created_at||previous.createdAt||0);
+    const workspaceId=lnNorm(info.workspaceId||info.workspace_id||info.projectId||info.project_id||previous.workspaceId||'');
+    const next={title, image, createdAt, workspaceId};
+
+    if(previous.title===next.title&&previous.image===next.image&&
+      Number(previous.createdAt||0)===next.createdAt&&String(previous.workspaceId||'')===next.workspaceId)return false;
+    lnSongInfo.set(id, next);
+    if(!lnLoadingStore)lnSave();
+    return true;
+  }
+
+  function lnRememberObject(object) {
+    if(!object||typeof object!=='object')return;
+    const id=lnNorm(object.id||object.clip_id||object.uuid);
+    if(!id)return;
+    const metadata=object.metadata&&typeof object.metadata==='object'?object.metadata:{};
+    lnRememberInfo(id, {
+      title:object.title||object.name||metadata.title||metadata.display_name||'',
+      image:object.image_url||object.image_large_url||object.image||object.cover_url||
+        metadata.image_url||metadata.image_large_url||'',
+      createdAt:object.created_at||object.createdAt||object.created_ts||object.created_time||
+        object.timestamp||metadata.created_at||metadata.createdAt||metadata.created_ts||metadata.timestamp||0,
+      workspaceId:object.project_id||object.workspace_id||object.project_uuid||object.projectId||
+        object.workspaceId||metadata.project_id||metadata.workspace_id||metadata.project_uuid||
+        metadata.projectId||metadata.workspaceId||''
+    });
+  }
+
+  function lnRowId(row) {
+    const href=row?.querySelector('a[href^="/song/"]')?.getAttribute('href')||'';
+    return lnNorm(href.split('/song/')[1]?.split(/[?#]/)[0]);
+  }
+
+  function lnRememberRow(row) {
+    const id=lnRowId(row);
+    if(!id)return;
+    const titleLink=row.querySelector('[class*="clip-title-wrapper"] > a[href^="/song/"]')||
+      row.querySelector('a[href^="/song/"]');
+    const image=row.querySelector('img');
+    lnRememberInfo(id, {
+      title:titleLink?.dataset.sunoFullTitle||titleLink?.textContent||'',
+      image:image?.dataset.src||image?.currentSrc||image?.src||''
+    });
+  }
+
+  function lnLoadStoreObject(data) {
+    if(!data||typeof data!=='object')return;
+    const parents=data.parents||{};
+    const sources=data.sources||{};
+    const songs=data.songs||{};
+
+    for(const[id, value]of Object.entries(parents)) {
+      const child=lnNorm(id);
+      const parent=lnNorm(value?.parent||value);
+      if(child&&parent&&child!==parent)lnAddSource(child, parent, value?.kind||'derived');
+    }
+    for(const[id, values]of Object.entries(sources)) {
+      const child=lnNorm(id);
+      if(!child||!Array.isArray(values))continue;
+      for(const value of values)lnAddSource(child, value?.id||value?.parent||value, value?.kind||'derived');
+    }
+    for(const[id, info]of Object.entries(songs))lnRememberInfo(id, info||{});
+  }
+
+  function lnLoad() {
+    lnLoadingStore=true;
+    try {
+      try { lnLoadStoreObject(JSON.parse(sessionStorage.getItem(LEGACY_LINEAGE_STORE)||'{}')); } catch(error) {}
+      try { lnLoadStoreObject(JSON.parse(sessionStorage.getItem(ANCESTRY_STORE)||'{}')); } catch(error) {}
+    } finally {
+      lnLoadingStore=false;
     }
   }
+
   function lnSave() {
     clearTimeout(lnSaveTimer);
-    lnSaveTimer=setTimeout(()=> {
+    lnSaveTimer=window.setTimeout(()=> {
       try {
-        let p={
-        };
-        for(const[id, parent]of lnParents)p[id]={
-          parent, kind:lnKinds.get(id)||"derived"
-        };
-        sessionStorage.setItem(LNSTORE, JSON.stringify({
-          parents:p
-        }))
-      } catch(e) {
-      }
-    }, 120)
+        const sources={};
+        const songs={};
+        for(const[id, list]of lnSources) {
+          sources[id]=list.map(source=>({id:source.id, kind:source.kind||'derived'}));
+        }
+        for(const[id, info]of [...lnSongInfo.entries()].slice(-1200)) {
+          songs[id]={
+            title:String(info?.title||''),
+            image:String(info?.image||''),
+            createdAt:Number(info?.createdAt||0),
+            workspaceId:String(info?.workspaceId||'')
+          };
+        }
+        sessionStorage.setItem(ANCESTRY_STORE, JSON.stringify({sources, songs}));
+      } catch(error) {}
+    }, 160);
   }
-  function lnSet(id, parent, kind="derived") {
-    id=lnNorm(id);
-    parent=lnNorm(parent);
-    if(!id||!parent||id===parent)return false;
-    let changed=lnParents.get(id)!==parent||lnKinds.get(id)!==kind;
-    if(changed) {
-      lnParents.set(id, parent);
-      lnKinds.set(id, kind);
-      lnSave()
-    }
-    return changed
+
+  function lnSet(childId, sourceId, kind='derived') {
+    return lnAddSource(childId, sourceId, kind);
   }
-  function lnVal(o, m, k) {
-    let v;
-    try {
-      v=m?.[k]
-    } catch(e) {
-    }
-    if(v!==undefined&&v!==null&&v!=="")return v;
-    try {
-      return o?.[k]
-    } catch(e) {
-      return undefined
-    }
+
+  function lnVal(object, metadata, key) {
+    let value;
+    try { value=metadata?.[key]; } catch(error) {}
+    if(value!==undefined&&value!==null&&value!=='')return value;
+    try { return object?.[key]; } catch(error) { return undefined; }
   }
-  function lnFirst(v) {
-    if(Array.isArray(v)) {
-      for(const x of v) {
-        let id=lnNorm(x);
+
+  function lnFirst(value) {
+    if(Array.isArray(value)) {
+      for(const item of value) {
+        let id=lnNorm(item);
         if(id)return id;
-        if(x&&typeof x==="object") {
-          id=lnNorm(x.id||x.clip_id||x.uuid);
-          if(id)return id
+        if(item&&typeof item==='object') {
+          id=lnNorm(item.id||item.clip_id||item.uuid);
+          if(id)return id;
         }
       }
     }
-    return lnNorm(v)
+    return lnNorm(value);
   }
-  function lnParent(o) {
-    let m=o?.metadata&&typeof o.metadata==="object"?o.metadata:{
-    }, get=k=>lnNorm(lnVal(o, m, k)), task=String(lnVal(o, m, "task")||"").toLowerCase(), type=String(lnVal(o, m, "type")||lnVal(o, m, "clip_type")||"").toLowerCase(), p="", kind="";
-    if(task==="infill"||task==="fixed_infill") {
-      p=get("override_history_clip_id")||get("override_future_clip_id")||lnFirst(lnVal(o, m, "history"))||get("edited_clip_id");
-      kind="section"
-    } else if(task==="extend") {
-      p=lnFirst(lnVal(o, m, "history"))||get("edited_clip_id")||get("continue_clip_id");
-      kind="extend"
-    } else if(type==="concat") {
-      p=lnFirst(lnVal(o, m, "concat_history"))||get("edited_clip_id");
-      kind="stitch"
-    } else if(type==="edit_speed") {
-      p=get("speed_clip_id")||get("edited_clip_id");
-      kind="speed"
-    } else if(task==="cover") {
-      p=get("cover_clip_id")||get("edited_clip_id");
-      kind="cover"
-    } else if(type==="upsample"||task==="upsample") {
-      p=get("upsample_clip_id")||get("remaster_clip_id")||get("edited_clip_id");
-      kind="remaster"
-    } else if(type==="edit_v3_export") {
-      p=get("edited_clip_id");
-      kind="edit"
-    }
-    if(!p) {
-      for(const k of["cover_clip_id", "remix_clip_id", "sample_clip_id", "chop_sample_clip_id", "source_clip_id", "reference_clip_id", "continue_clip_id", "infill_clip_id", "underpainting_clip_id", "overpainting_clip_id", "stem_from_id", "speed_clip_id", "upsample_clip_id", "edited_clip_id"]) {
-        p=get(k);
-        if(p) {
-          kind=k.replace(/_clip_id$/, "");
-          break
-        }
-      }
-    }
-    if(!p) {
-      let roots=lnVal(o, m, "clip_roots"), list=Array.isArray(roots)?roots:Array.isArray(roots?.clips)?roots.clips:[];
-      p=lnFirst(list);
-      if(p)kind=String(roots?.clip_attribution_type||"root")
-    }
-    return {
-      parent:p, kind:kind||"derived"
-    }
-  }
-  function lnRecord(o) {
-    if(!o||typeof o!=="object")return false;
-    let id=lnNorm(o.id||o.clip_id||o.uuid);
-    if(!id)return false;
-    let q=lnParent(o);
-    return q.parent?lnSet(id, q.parent, q.kind):false
-  }
-  function lnWalk(v, seen=new WeakSet, depth=0, budget={
-    n:0
-  }) {
-    if(v==null||depth>11||budget.n++>(budget.max||9000))return;
-    if(typeof v==="string") {
-      if(v.length<60||v.length>180000||!/(?:clip_id|clip_roots|history|stem_from_id)/.test(v))return;
-      let t=v.trim();
-      if(t[0]==="{"||t[0]==="[")try {
-        lnWalk(JSON.parse(t), seen, depth+1, budget)
-      } catch(e) {
-      }
-      return
-    }
-    if(typeof v!=="object"||seen.has(v))return;
-    seen.add(v);
-    lnRecord(v);
-    if(v.nodeType)return;
-    let keys;
-    try {
-      keys=Object.keys(v)
-    } catch(e) {
-      return
-    }
-    for(const k of keys) {
-      if(k==="stateNode"||k==="alternate"||k==="return"||k==="child"||k==="sibling"||k==="_owner")continue;
-      let x;
-      try {
-        x=v[k]
-      } catch(e) {
-        continue
-      }
-      lnWalk(x, seen, depth+1, budget)
-    }
-  }
-  function lnReactNode(n, seen=new WeakSet, budget={
-    n:0, max:5000
-  }) {
-    if(!n)return;
-    let keys;
-    try {
-      keys=Object.getOwnPropertyNames(n)
-    } catch(e) {
-      return
-    }
-    for(const k of keys) {
-      if(!k.startsWith("__reactProps$")&&!k.startsWith("__reactFiber$"))continue;
-      let x;
-      try {
-        x=n[k]
-      } catch(e) {
-        continue
-      }
-      if(k.startsWith("__reactProps$")) {
-        lnWalk(x, seen, 0, budget)
-      } else {
-        let f=x, steps=0;
-        while(f&&steps++<22&&budget.n<budget.max) {
-          lnWalk(f.memoizedProps, seen, 0, budget);
-          lnWalk(f.pendingProps, seen, 0, budget);
-          lnWalk(f.memoizedState, seen, 0, budget);
-          f=f.return
-        }
-      }
-    }
-  }
-  function lnRowId(r) {
-    return lnNorm((r.querySelector('a[href^="/song/"]')?.getAttribute("href")||"").split("/song/")[1]?.split(/[?#]/)[0])
-  }
-  function lnScanRow(r) {
-    let id=lnRowId(r);
-    if(!id||lnRowSeen.get(r)===id)return;
-    lnRowSeen.set(r, id);
-    let nodes=[r, r.parentElement, r.closest('[draggable="true"]'), r.querySelector('a[href^="/song/"]'), r.querySelector('[aria-label^="Play "]'), r.querySelector('button[aria-label="Edit title"]'), r.querySelector('button[aria-label="More options"]')].filter(Boolean), count=0;
-    for(const n of r.querySelectorAll("*")) {
-      if(count>=18)break;
-      let ks;
-      try {
-        ks=Object.getOwnPropertyNames(n)
-      } catch(e) {
-        continue
-      }
-      if(ks.some(k=>k.startsWith("__reactProps$")||k.startsWith("__reactFiber$"))) {
-        nodes.push(n);
-        count++
-      }
-    }
-    let seen=new WeakSet, budget={
-      n:0, max:3500
+
+  function lnIds(value, output=[]) {
+    const add=candidate=> {
+      const id=lnNorm(candidate);
+      if(id&&!output.includes(id))output.push(id);
     };
-    for(const n of new Set(nodes)) {
-      if(budget.n>=budget.max)break;
-      lnReactNode(n, seen, budget)
+    if(Array.isArray(value)) {
+      for(const item of value)lnIds(item, output);
+    } else if(value&&typeof value==='object') {
+      add(value.id||value.clip_id||value.uuid);
+      for(const key of['clips','items','history','sources','parents','inputs']) {
+        if(value[key]!==undefined)lnIds(value[key], output);
+      }
+    } else add(value);
+    return output;
+  }
+
+  function lnSourcesFromObject(object) {
+    const metadata=object?.metadata&&typeof object.metadata==='object'?object.metadata:{};
+    const task=String(lnVal(object, metadata, 'task')||'').toLowerCase();
+    const type=String(lnVal(object, metadata, 'type')||lnVal(object, metadata, 'clip_type')||'').toLowerCase();
+    const result=[];
+    const add=(value, kind)=> {
+      for(const id of lnIds(value)) {
+        const existing=result.find(source=>source.id===id);
+        if(!existing)result.push({id, kind});
+        else if(lnKindPriority(kind)>lnKindPriority(existing.kind))existing.kind=kind;
+      }
+    };
+
+    if(task==='infill'||task==='fixed_infill') {
+      add(lnVal(object, metadata, 'override_history_clip_id'), 'section');
+      add(lnVal(object, metadata, 'override_future_clip_id'), 'section');
+      add(lnVal(object, metadata, 'history'), 'section');
+      add(lnVal(object, metadata, 'edited_clip_id'), 'edit');
+    }
+    if(task==='extend') {
+      add(lnVal(object, metadata, 'history'), 'extend');
+      add(lnVal(object, metadata, 'continue_clip_id'), 'extend');
+      add(lnVal(object, metadata, 'edited_clip_id'), 'edit');
+    }
+    if(type==='concat') {
+      add(lnVal(object, metadata, 'concat_history'), 'stitch');
+      add(lnVal(object, metadata, 'edited_clip_id'), 'edit');
+    }
+    if(type==='edit_speed') {
+      add(lnVal(object, metadata, 'speed_clip_id'), 'speed');
+      add(lnVal(object, metadata, 'edited_clip_id'), 'edit');
+    }
+    if(task==='cover') {
+      add(lnVal(object, metadata, 'cover_clip_id'), 'cover');
+      add(lnVal(object, metadata, 'edited_clip_id'), 'edit');
+    }
+    if(type==='upsample'||task==='upsample') {
+      add(lnVal(object, metadata, 'upsample_clip_id'), 'remaster');
+      add(lnVal(object, metadata, 'remaster_clip_id'), 'remaster');
+      add(lnVal(object, metadata, 'edited_clip_id'), 'edit');
+    }
+    if(type==='edit_v3_export')add(lnVal(object, metadata, 'edited_clip_id'), 'edit');
+
+    const fields=[
+      ['cover_clip_id','cover'], ['remix_clip_id','remix'],
+      ['sample_clip_id','sample'], ['chop_sample_clip_id','chop_sample'],
+      ['source_clip_id','source'], ['reference_clip_id','reference'],
+      ['continue_clip_id','extend'], ['infill_clip_id','section'],
+      ['underpainting_clip_id','underpainting'], ['overpainting_clip_id','overpainting'],
+      ['stem_from_id','stem_from'], ['speed_clip_id','speed'],
+      ['upsample_clip_id','remaster'], ['remaster_clip_id','remaster'],
+      ['edited_clip_id','edit'], ['history',task==='extend'?'extend':'history'],
+      ['concat_history','stitch'], ['source_clips','source'],
+      ['reference_clips','reference'], ['input_clips','input']
+    ];
+    for(const[field, kind]of fields)add(lnVal(object, metadata, field), kind);
+
+    if(!result.length) {
+      const roots=lnVal(object, metadata, 'clip_roots');
+      const rootValues=Array.isArray(roots)?roots:Array.isArray(roots?.clips)?roots.clips:[];
+      add(rootValues, String(roots?.clip_attribution_type||'root'));
+    }
+    return result;
+  }
+
+  function lnPreferredSource(object) {
+    const metadata=object?.metadata&&typeof object.metadata==='object'?object.metadata:{};
+    const task=String(lnVal(object, metadata, 'task')||'').toLowerCase();
+    const type=String(lnVal(object, metadata, 'type')||lnVal(object, metadata, 'clip_type')||'').toLowerCase();
+    const get=key=>lnNorm(lnVal(object, metadata, key));
+    let source='';
+    let kind='derived';
+
+    if(task==='infill'||task==='fixed_infill') {
+      source=get('override_history_clip_id')||get('override_future_clip_id')||
+        lnFirst(lnVal(object, metadata, 'history'))||get('edited_clip_id');
+      kind='section';
+    } else if(task==='extend') {
+      source=lnFirst(lnVal(object, metadata, 'history'))||get('edited_clip_id')||get('continue_clip_id');
+      kind='extend';
+    } else if(type==='concat') {
+      source=lnFirst(lnVal(object, metadata, 'concat_history'))||get('edited_clip_id');
+      kind='stitch';
+    } else if(type==='edit_speed') {
+      source=get('speed_clip_id')||get('edited_clip_id');
+      kind='speed';
+    } else if(task==='cover') {
+      source=get('cover_clip_id')||get('edited_clip_id');
+      kind='cover';
+    } else if(type==='upsample'||task==='upsample') {
+      source=get('upsample_clip_id')||get('remaster_clip_id')||get('edited_clip_id');
+      kind='remaster';
+    } else if(type==='edit_v3_export') {
+      source=get('edited_clip_id');
+      kind='edit';
+    }
+
+    if(!source) {
+      for(const key of ['cover_clip_id','remix_clip_id','sample_clip_id','chop_sample_clip_id',
+        'source_clip_id','reference_clip_id','continue_clip_id','infill_clip_id',
+        'underpainting_clip_id','overpainting_clip_id','stem_from_id','speed_clip_id',
+        'upsample_clip_id','edited_clip_id']) {
+        source=get(key);
+        if(source) {
+          kind=key.replace(/_clip_id$/, '');
+          break;
+        }
+      }
+    }
+
+    if(!source) {
+      const roots=lnVal(object, metadata, 'clip_roots');
+      const list=Array.isArray(roots)?roots:Array.isArray(roots?.clips)?roots.clips:[];
+      source=lnFirst(list);
+      if(source)kind=String(roots?.clip_attribution_type||'root');
+    }
+    return {id:source, kind:kind||'derived'};
+  }
+
+  function lnRecord(object) {
+    if(!object||typeof object!=='object')return false;
+    const id=lnNorm(object.id||object.clip_id||object.uuid);
+    if(!id)return false;
+    lnRememberObject(object);
+    let changed=false;
+    for(const source of lnSourcesFromObject(object)) {
+      changed=lnAddSource(id, source.id, source.kind)||changed;
+    }
+    if(!lnSources.get(id)?.length) {
+      const preferred=lnPreferredSource(object);
+      if(preferred.id)changed=lnAddSource(id, preferred.id, preferred.kind)||changed;
+    }
+    return changed;
+  }
+
+  function lnWalk(value, seen=new WeakSet(), depth=0, budget={n:0,max:9000}) {
+    if(value==null||depth>12||budget.n++>budget.max)return;
+    if(typeof value==='string') {
+      if(value.length<60||value.length>260000||
+        !/(?:clip_id|clip_roots|history|stem_from_id|image_url|audio_url)/.test(value))return;
+      const trimmed=value.trim();
+      if(trimmed[0]==='{'||trimmed[0]==='[') {
+        try { lnWalk(JSON.parse(trimmed), seen, depth+1, budget); } catch(error) {}
+      }
+      return;
+    }
+    if(typeof value!=='object'||seen.has(value))return;
+    seen.add(value);
+    lnRecord(value);
+    if(value.nodeType)return;
+
+    let keys;
+    try { keys=Object.keys(value); } catch(error) { return; }
+    for(const key of keys) {
+      if(['stateNode','alternate','return','child','sibling','_owner'].includes(key))continue;
+      let next;
+      try { next=value[key]; } catch(error) { continue; }
+      lnWalk(next, seen, depth+1, budget);
     }
   }
-  function lnLinkId(a) {
-    return lnNorm((a?.getAttribute("href")||"").split("/song/")[1]?.split(/[?#]/)[0])
+
+  function lnReactNode(node, seen=new WeakSet(), budget={n:0,max:5000}) {
+    if(!node)return;
+    let keys;
+    try { keys=Object.getOwnPropertyNames(node); } catch(error) { return; }
+    for(const key of keys) {
+      if(!key.startsWith('__reactProps$')&&!key.startsWith('__reactFiber$'))continue;
+      let value;
+      try { value=node[key]; } catch(error) { continue; }
+      if(key.startsWith('__reactProps$')) {
+        lnWalk(value, seen, 0, budget);
+      } else {
+        let fiber=value;
+        let steps=0;
+        while(fiber&&steps++<24&&budget.n<budget.max) {
+          lnWalk(fiber.memoizedProps, seen, 0, budget);
+          lnWalk(fiber.pendingProps, seen, 0, budget);
+          lnWalk(fiber.memoizedState, seen, 0, budget);
+          fiber=fiber.return;
+        }
+      }
+    }
   }
+
+  function lnScanRow(row) {
+    const id=lnRowId(row);
+    if(!id||lnRowSeen.get(row)===id)return;
+    lnRowSeen.set(row, id);
+    const nodes=[row,row.parentElement,row.closest('[draggable="true"]'),
+      row.querySelector('a[href^="/song/"]'),row.querySelector('[aria-label^="Play "]'),
+      row.querySelector('button[aria-label="Edit title"]'),
+      row.querySelector('button[aria-label="More options"]')].filter(Boolean);
+
+    let count=0;
+    for(const node of row.querySelectorAll('*')) {
+      if(count>=18)break;
+      let keys;
+      try { keys=Object.getOwnPropertyNames(node); } catch(error) { continue; }
+      if(keys.some(key=>key.startsWith('__reactProps$')||key.startsWith('__reactFiber$'))) {
+        nodes.push(node);
+        count++;
+      }
+    }
+
+    const seen=new WeakSet();
+    const budget={n:0,max:3500};
+    for(const node of new Set(nodes)) {
+      if(budget.n>=budget.max)break;
+      lnReactNode(node, seen, budget);
+    }
+  }
+
+  function lnLinkId(anchor) {
+    const href=anchor?.getAttribute('href')||'';
+    return lnNorm(href.split('/song/')[1]?.split(/[?#]/)[0]);
+  }
+
   function lnDetailPanel() {
-    let candidates=[];
-    for(const seed of $("button, a, [role=button]")) {
-      let t=(seed.textContent||"").trim();
-      if(!/^(?:Show More|Remix\/Edit)$/i.test(t)&&!/(?:Cover|Remix|Sample|Extended?|Stemmed?|Remastered?)\s+(?:of|from)/i.test(t))continue;
-      let n=seed;
-      for(let i=0;
-      n&&i<13;
-      i++, n=n.parentElement) {
-        let links=n.querySelectorAll?.('a[href^="/song/"]')||[];
-        let tx=(n.textContent||"").replace(/\s+/g, " ");
-        if(links.length>=2&&/(?:Remix\/Edit|Cover\s+of|Remix\s+of|Sample(?:d)?\s+from|Extend(?:ed)?\s+from|Stemmed\s+from|Remastered\s+from)/i.test(tx))candidates.push(n)
+    const candidates=[];
+    for(const seed of $('button, a, [role=button]')) {
+      const text=(seed.textContent||'').trim();
+      if(!/^(?:Show More|Remix\/Edit)$/i.test(text)&&
+        !/(?:Cover|Remix|Sample|Extended?|Stemmed?|Remastered?)\s+(?:of|from)/i.test(text))continue;
+      let node=seed;
+      for(let depth=0;node&&depth<13;depth++,node=node.parentElement) {
+        const links=node.querySelectorAll?.('a[href^="/song/"]')||[];
+        const content=(node.textContent||'').replace(/\s+/g, ' ');
+        if(links.length>=2&&/(?:Remix\/Edit|Cover\s+of|Remix\s+of|Sample(?:d)?\s+from|Extend(?:ed)?\s+from|Stemmed\s+from|Remastered\s+from)/i.test(content)) {
+          candidates.push(node);
+        }
       }
     }
     if(!candidates.length)return null;
-    candidates.sort((a, b)=>(a.textContent||"").length-(b.textContent||"").length);
-    return candidates[0]
+    candidates.sort((a,b)=>(a.textContent||'').length-(b.textContent||'').length);
+    return candidates[0];
   }
+
   function lnDomRelation(panel) {
     if(!panel)return;
-    let links=[...panel.querySelectorAll('a[href^="/song/"]')], counts=new Map;
-    for(const a of links) {
-      let id=lnLinkId(a);
-      if(id)counts.set(id, (counts.get(id)||0)+1)
+    const links=[...panel.querySelectorAll('a[href^="/song/"]')];
+    const counts=new Map();
+    for(const anchor of links) {
+      const id=lnLinkId(anchor);
+      if(id)counts.set(id, (counts.get(id)||0)+1);
     }
-    let child=[...counts].sort((a, b)=>b[1]-a[1])[0]?.[0]||"";
+    const child=[...counts].sort((a,b)=>b[1]-a[1])[0]?.[0]||'';
     if(!child)return;
-    for(const a of links) {
-      let parent=lnLinkId(a);
-      if(!parent||parent===child)continue;
-      let n=a, txt="";
-      for(let i=0;
-      n&&i<5;
-      i++, n=n.parentElement) {
-        txt=(n.textContent||"").replace(/\s+/g, " ").trim();
-        if(/(?:Cover|Remix|Sample|Extended?|Stemmed?|Remastered?)\s+(?:of|from)/i.test(txt))break
+
+    for(const anchor of links) {
+      const source=lnLinkId(anchor);
+      if(!source||source===child)continue;
+      let node=anchor;
+      let text='';
+      for(let depth=0;node&&depth<5;depth++,node=node.parentElement) {
+        text=(node.textContent||'').replace(/\s+/g, ' ').trim();
+        if(/(?:Cover|Remix|Sample|Extended?|Stemmed?|Remastered?)\s+(?:of|from)/i.test(text))break;
       }
-      let m=txt.match(/(Cover|Remix|Sample|Extended?|Stemmed?|Remastered?)/i);
-      if(m)lnSet(child, parent, m[1].toLowerCase())
+      const match=text.match(/(Cover|Remix|Sample|Extended?|Stemmed?|Remastered?)/i);
+      if(match)lnSet(child, source, match[1].toLowerCase());
     }
   }
+
   function lnScanDetail() {
-    let panel=lnDetailPanel();
+    const panel=lnDetailPanel();
     if(!panel)return;
     lnDomRelation(panel);
-    let nodes=[panel], seedCount=0;
-    for(const n of panel.querySelectorAll("*")) {
-      if(seedCount>=35)break;
-      let ks;
-      try {
-        ks=Object.getOwnPropertyNames(n)
-      } catch(e) {
-        continue
-      }
-      if(ks.some(k=>k.startsWith("__reactProps$")||k.startsWith("__reactFiber$"))) {
-        nodes.push(n);
-        seedCount++
+    const nodes=[panel];
+    let count=0;
+    for(const node of panel.querySelectorAll('*')) {
+      if(count>=35)break;
+      let keys;
+      try { keys=Object.getOwnPropertyNames(node); } catch(error) { continue; }
+      if(keys.some(key=>key.startsWith('__reactProps$')||key.startsWith('__reactFiber$'))) {
+        nodes.push(node);
+        count++;
       }
     }
-    let seen=new WeakSet, budget={
-      n:0, max:14000
-    };
-    for(const n of new Set(nodes)) {
+    const seen=new WeakSet();
+    const budget={n:0,max:14000};
+    for(const node of new Set(nodes)) {
       if(budget.n>=budget.max)break;
-      lnReactNode(n, seen, budget)
+      lnReactNode(node, seen, budget);
     }
   }
-  function lnRoot(id) {
-    let cur=lnNorm(id), seen=new Set, last=cur;
-    for(let i=0;
-    i<64&&cur&&!seen.has(cur);
-    i++) {
-      seen.add(cur);
-      last=cur;
-      let p=lnParents.get(cur);
-      if(!p||p===cur)return cur;
-      cur=p
-    }
-    return last
+
+  function workspaceIdFromLocation() {
+    try { return lnNorm(new URL(location.href).searchParams.get('wid')); }
+    catch(error) { return ''; }
   }
-  function lnHash(s) {
-    let h=2166136261;
-    for(let i=0;
-    i<s.length;
-    i++)h=Math.imul(h^s.charCodeAt(i), 16777619);
-    return h>>>0
+
+  function workspaceReset(id) {
+    workspaceState.id=id;
+    workspaceState.networkOrder=[];
+    workspaceState.reactOrder=[];
+    workspaceState.domOrder=[];
+    workspaceState.networkSet.clear();
+    workspaceState.reactSet.clear();
+    workspaceState.domSet.clear();
+    workspaceState.memberSet.clear();
+    workspaceState.positionMap.clear();
+    workspaceState.sequences=[];
+    workspaceState.sequenceKeys.clear();
+    workspaceState.rowStep=111;
+    workspaceState.fetchedUrls.clear();
+    workspaceState.pendingUrls.clear();
+    workspaceState.requestedSongIds.clear();
+    workspaceState.failedSongBatch=false;
+    for(const job of workspaceState.queue.splice(0))job.resolve(null);
+    workspaceState.indexingPromise=null;
+    workspaceState.lastKick=0;
+    workspaceState.lastReactScan=0;
+    workspaceState.lastVisibleScan=0;
+    workspaceState.reactScanScheduled=false;
+    workspaceState.indexGeneration++;
   }
-  function lnColor(root) {
-    let t=String(root||""), h=2166136261;
-    for(let i=0;
-    i<t.length;
-    i++) {
-      h^=t.charCodeAt(i);
-      h=Math.imul(h, 16777619)
+
+  function workspaceEnsureCurrent() {
+    const id=workspaceIdFromLocation();
+    if(id!==workspaceState.id)workspaceReset(id);
+    return id;
+  }
+
+  function workspaceMarkMember(id) {
+    id=lnNorm(id);
+    if(id)workspaceState.memberSet.add(id);
+  }
+
+  function workspaceAppendOrder(id, source='network') {
+    id=lnNorm(id);
+    if(!id)return;
+    workspaceMarkMember(id);
+    const order=source==='network'?workspaceState.networkOrder:
+      source==='react'?workspaceState.reactOrder:workspaceState.domOrder;
+    const set=source==='network'?workspaceState.networkSet:
+      source==='react'?workspaceState.reactSet:workspaceState.domSet;
+    if(set.has(id))return;
+    set.add(id);
+    order.push(id);
+  }
+
+  function workspaceOrientOrder(order) {
+    if(!Array.isArray(order)||order.length<2)return order||[];
+    const visible=[];
+    for(const row of $('[data-testid="clip-row"]')) {
+      const id=lnRowId(row);
+      const index=order.indexOf(id);
+      if(index<0)continue;
+      visible.push({index,top:row.getBoundingClientRect().top});
     }
-    h>>>=0;
-    let hue=h%360, sat=28+((h>>>8)%9), light=23+((h>>>16)%5);
-    return {
-      index:String(h%36), background:`hsla(${hue},${sat}%,${light}%,.82)`, edge:`hsla(${hue},${Math.min(52,sat+14)}%,${Math.min(62,light+29)}%,.72)`
+    if(visible.length<2)return order;
+    visible.sort((a,b)=>a.top-b.top);
+    const first=visible[0];
+    const last=visible[visible.length-1];
+    return first.index<=last.index?order:[...order].reverse();
+  }
+
+  function workspaceOrderRecord() {
+    const records=[
+      {source:'network',order:workspaceState.networkOrder},
+      {source:'react',order:workspaceState.reactOrder},
+      {source:'dom',order:workspaceState.domOrder}
+    ];
+    records.sort((a,b)=>b.order.length-a.order.length);
+    const record=records[0]||{source:'',order:[]};
+    return {...record,order:workspaceOrientOrder(record.order)};
+  }
+
+  function workspaceOrder() {
+    return workspaceOrderRecord().order;
+  }
+
+  function workspaceHasSong(id) {
+    id=lnNorm(id);
+    if(!id)return false;
+    return Boolean(lnVisibleRow(id)||workspaceState.memberSet.has(id)||
+      workspaceState.networkSet.has(id)||workspaceState.reactSet.has(id)||workspaceState.domSet.has(id));
+  }
+
+  function workspaceIndexRecord(id) {
+    id=lnNorm(id);
+    if(!id)return {source:'',order:[],index:-1,visibleAnchors:0};
+
+    // Prefer an order that contains both the target and currently rendered rows.
+    // The longest cached order is not always the useful one: a partial network
+    // response can contain the target but none of the rows around the viewport,
+    // which leaves the navigation routine without a position anchor.
+    const visibleIds=new Set(
+      $('[data-testid="clip-row"]').map(row=>lnRowId(row)).filter(Boolean)
+    );
+    const records=[
+      {source:'network',order:workspaceOrientOrder(workspaceState.networkOrder)},
+      {source:'react',order:workspaceOrientOrder(workspaceState.reactOrder)},
+      {source:'dom',order:workspaceOrientOrder(workspaceState.domOrder)}
+    ].filter(record=>record.order.includes(id)).map(record=>({
+      ...record,
+      visibleAnchors:record.order.reduce((count,songId)=>count+(visibleIds.has(songId)?1:0),0)
+    }));
+    records.sort((a,b)=>b.visibleAnchors-a.visibleAnchors||b.order.length-a.order.length);
+    const record=records[0]||{source:'',order:[],index:-1,visibleAnchors:0};
+    return {...record,index:record.order.indexOf(id)};
+  }
+
+  function workspaceIndexOf(id) {
+    return workspaceIndexRecord(id).index;
+  }
+
+  function workspaceContextAllowsOrder(context='') {
+    const text=String(context||'');
+    if(/\/api\/feed\/v3(?:[/?#]|$)/i.test(text))return true;
+    const key=text.split(/[\/.]/).pop()?.toLowerCase()||'';
+    return /^(?:clips?|clip_ids|songs?|song_ids|feed|generations?|items|results|records)$/.test(key);
+  }
+
+  function workspaceProjectIdFromObject(object) {
+    if(!object||typeof object!=='object')return '';
+    const metadata=object.metadata&&typeof object.metadata==='object'?object.metadata:{};
+    return lnNorm(object.project_id||object.workspace_id||object.project_uuid||
+      object.projectId||object.workspaceId||object.project||object.workspace||
+      metadata.project_id||metadata.workspace_id||metadata.project_uuid||
+      metadata.projectId||metadata.workspaceId);
+  }
+
+  function workspaceMarkObjectMembership(object) {
+    if(!object||typeof object!=='object'||Array.isArray(object))return;
+    const clipId=lnNorm(object.id||object.clip_id||object.uuid);
+    if(!clipId)return;
+    if(workspaceProjectIdFromObject(object)===workspaceState.id)workspaceMarkMember(clipId);
+  }
+
+  function workspaceLooksLikeClip(object, context='') {
+    if(!object||typeof object!=='object'||Array.isArray(object))return false;
+    const id=lnNorm(object.id||object.clip_id||object.uuid);
+    if(!id||id===workspaceState.id)return false;
+    const metadata=object.metadata&&typeof object.metadata==='object'?object.metadata:{};
+    const hasClipData=Boolean(object.clip_id||object.image_url||object.image_large_url||object.audio_url||
+      object.video_url||metadata.image_url||metadata.image_large_url||metadata.task||metadata.type||
+      metadata.cover_clip_id||metadata.edited_clip_id);
+    if(!hasClipData)return false;
+    const projectId=workspaceProjectIdFromObject(object);
+    return projectId===workspaceState.id||workspaceContextAllowsOrder(context);
+  }
+
+  function workspaceSequenceClipId(object) {
+    if(!object||typeof object!=='object'||Array.isArray(object))return '';
+    return lnNorm(object.id||object.clip_id||object.uuid);
+  }
+
+  function workspaceLooksLikeFullClip(object) {
+    const id=workspaceSequenceClipId(object);
+    if(!id)return false;
+    const metadata=object.metadata&&typeof object.metadata==='object'?object.metadata:{};
+    const strong=Boolean(object.title||object.name||object.image_url||object.image_large_url||
+      object.audio_url||object.video_url||object.created_at||object.status||object.model_name||
+      metadata.title||metadata.image_url||metadata.prompt||metadata.tags||metadata.duration);
+    return strong;
+  }
+
+  function workspaceRememberSequence(array, source='network', context='', path='') {
+    if(!Array.isArray(array)||array.length<2)return;
+    const pathText=String(path||'').toLowerCase();
+    if(/(?:metadata|history|clip_roots?|sources?|parents?|inputs?|attribution|references?|lineage|ancestors?)/.test(pathText))return;
+
+    const objects=array.filter(item=>item&&typeof item==='object'&&!Array.isArray(item));
+    const clips=objects.filter(workspaceLooksLikeFullClip);
+    if(clips.length<2||clips.length/Math.max(1,array.length)<0.7)return;
+
+    const ids=[];
+    for(const item of clips) {
+      const id=workspaceSequenceClipId(item);
+      if(id&&!ids.includes(id))ids.push(id);
+    }
+    if(ids.length<2)return;
+
+    const signature=ids.join('|');
+    if(workspaceState.sequenceKeys.has(signature))return;
+    workspaceState.sequenceKeys.add(signature);
+    workspaceState.sequences.push({ids,source,context:String(context||''),path:String(path||''),seenAt:Date.now()});
+    if(workspaceState.sequences.length>120) {
+      const removed=workspaceState.sequences.splice(0,workspaceState.sequences.length-120);
+      for(const sequence of removed)workspaceState.sequenceKeys.delete(sequence.ids.join('|'));
+    }
+
+    for(const item of clips) {
+      const id=workspaceSequenceClipId(item);
+      if(!id)continue;
+      workspaceAppendOrder(id,source);
+      workspaceMarkObjectMembership(item);
+      lnRecord(item);
     }
   }
-  // Group locally known parent/child songs and apply stable family colors.
-function createLineageColorsSafe() {
-    try {
-      let rows=$('[data-testid="clip-row"] a[href^="/song/"]').map(a=>a.closest('[data-testid="clip-row"]')).filter(Boolean);
-      rows.forEach(lnScanRow);
-      let now=Date.now();
-      if(now-lnLastDetail>350) {
-        lnLastDetail=now;
-        lnScanDetail()
+
+  function workspaceIndexPayload(value, options={}) {
+    const source=options.source||'network';
+    const allowOrder=options.allowOrder!==false;
+    const seen=new WeakSet();
+    const budget={n:0,max:options.max||80000};
+
+    const walk=(node, context='', depth=0, path='')=> {
+      if(node==null||depth>16||budget.n++>budget.max)return;
+      if(typeof node==='string') {
+        const trimmed=node.trim();
+        if(trimmed.length>40&&trimmed.length<500000&&(trimmed[0]==='{'||trimmed[0]==='[')) {
+          try { walk(JSON.parse(trimmed), context, depth+1, path); } catch(error) {}
+        }
+        return;
       }
-      let items=rows.map(row=>({
-        row, id:lnRowId(row)
-      })).filter(x=>x.id), children=new Set(lnParents.values()), groups=new Map;
-      for(const x of items) {
-        x.root=lnRoot(x.id);
-        x.parent=lnParents.get(x.id)||"";
-        x.row.setAttribute("data-suno-lineage-known", x.parent||children.has(x.id)?"1":"0");
-        if(x.parent)x.row.setAttribute("data-suno-lineage-parent", x.parent);
-        else x.row.removeAttribute("data-suno-lineage-parent");
-        x.row.setAttribute("data-suno-lineage-root", x.root);
-        if(!groups.has(x.root))groups.set(x.root, []);
-        groups.get(x.root).push(x)
+      if(typeof node!=='object'||seen.has(node))return;
+      seen.add(node);
+
+      if(Array.isArray(node)) {
+        if(allowOrder)workspaceRememberSequence(node,source,options.context||'',path||context);
+        for(const item of node) {
+          if(item&&typeof item==='object')workspaceMarkObjectMembership(item);
+          if(item&&typeof item==='object')lnRecord(item);
+          walk(item, context, depth+1, path);
+        }
+        return;
       }
-      let active=new Set, activeGroups=[];
-      for(const[root, g]of groups) {
-        let ids=new Set(g.map(x=>x.id)), related=g.some(x=>x.parent||children.has(x.id));
-        if(ids.size<2||!related)continue;
-        let c=lnColor(root);
-        activeGroups.push({
-          root, color:c.index, count:ids.size
-        });
-        for(const x of g) {
-          active.add(x.row);
-          x.row.setAttribute("data-suno-lineage-color", c.index);
-          x.row.style.setProperty("background-color", c.background, "important");
-          x.row.style.setProperty("box-shadow", `inset 5px 0 0 ${c.edge}`, "important");
-          x.row.style.setProperty("border-radius", ".5rem", "important")
+
+      workspaceMarkObjectMembership(node);
+      lnRecord(node);
+
+      let keys;
+      try { keys=Object.keys(node); } catch(error) { return; }
+      const priority=['clips','songs','feed','generations','items','results','records','pages','data'];
+      keys.sort((a,b)=>priority.indexOf(a)===-1?1:priority.indexOf(b)===-1?-1:priority.indexOf(a)-priority.indexOf(b));
+      for(const key of keys) {
+        if(['stateNode','alternate','return','child','sibling','_owner'].includes(key))continue;
+        let child;
+        try { child=node[key]; } catch(error) { continue; }
+        const childPath=path?`${path}.${key}`:key;
+        walk(child,key,depth+1,childPath);
+      }
+    };
+
+    walk(value, options.context||'', 0, '');
+  }
+
+  function workspaceIndexVisibleRows() {
+    const id=workspaceEnsureCurrent();
+    if(!id)return;
+    const rows=$('[data-testid="clip-row"]');
+    const container=workspaceScrollContainer();
+    const containerRect=container?.getBoundingClientRect?.()||{top:0};
+    const measured=[];
+
+    for(const row of rows) {
+      const songId=lnRowId(row);
+      if(!songId)continue;
+      lnRememberRow(row);
+      lnScanRow(row);
+      workspaceAppendOrder(songId, 'dom');
+
+      if(container) {
+        const rect=row.getBoundingClientRect();
+        const top=container.scrollTop+rect.top-containerRect.top;
+        if(Number.isFinite(top)&&Number.isFinite(rect.height)&&rect.height>20) {
+          workspaceState.positionMap.set(songId,{top,height:rect.height,seenAt:Date.now()});
+          measured.push({top,height:rect.height});
         }
       }
-      for(const r of $('[data-suno-lineage-known]'))if(!active.has(r)) {
-        r.removeAttribute("data-suno-lineage-color");
-        r.style.removeProperty("background-color");
-        r.style.removeProperty("box-shadow");
-        r.style.removeProperty("border-radius")
+    }
+
+    measured.sort((a,b)=>a.top-b.top);
+    const steps=[];
+    for(let index=1;index<measured.length;index++) {
+      const delta=measured[index].top-measured[index-1].top;
+      if(delta>35&&delta<260)steps.push(delta);
+    }
+    if(steps.length) {
+      steps.sort((a,b)=>a-b);
+      workspaceState.rowStep=steps[Math.floor(steps.length/2)];
+    }
+    workspaceState.lastVisibleScan=Date.now();
+  }
+
+  function workspaceScanReactState() {
+    const id=workspaceEnsureCurrent();
+    if(!id)return;
+    const firstRow=document.querySelector('[data-testid="clip-row"]');
+    const root=firstRow?.closest('main, [role="main"], #main-container')||
+      document.getElementById('main-container')||document.body;
+    const nodes=[root,firstRow,firstRow?.parentElement,firstRow?.parentElement?.parentElement].filter(Boolean);
+
+    let count=0;
+    for(const node of root.querySelectorAll('*')) {
+      if(count>=18)break;
+      let keys;
+      try { keys=Object.getOwnPropertyNames(node); } catch(error) { continue; }
+      if(keys.some(key=>key.startsWith('__reactProps$')||key.startsWith('__reactFiber$'))) {
+        nodes.push(node);
+        count++;
       }
-      window.__sunoLineageV41={
-        ok:true, parents:lnParents.size, rows:items.length, activeGroups, lastRun:Date.now()
+    }
+
+    let payloadCount=0;
+    for(const node of new Set(nodes)) {
+      if(payloadCount>=20)break;
+      let keys;
+      try { keys=Object.getOwnPropertyNames(node); } catch(error) { continue; }
+      for(const key of keys) {
+        if(payloadCount>=20)break;
+        if(!key.startsWith('__reactProps$')&&!key.startsWith('__reactFiber$'))continue;
+        let value;
+        try { value=node[key]; } catch(error) { continue; }
+        if(key.startsWith('__reactProps$')) {
+          workspaceIndexPayload(value,{source:'react',allowOrder:true,max:5000});
+          payloadCount++;
+        } else {
+          let fiber=value;
+          let steps=0;
+          while(fiber&&steps++<24&&payloadCount<20) {
+            workspaceIndexPayload(fiber.memoizedProps,{source:'react',allowOrder:true,max:5000});
+            workspaceIndexPayload(fiber.memoizedState,{source:'react',allowOrder:true,max:5000});
+            payloadCount+=2;
+            fiber=fiber.return;
+          }
+        }
       }
-    } catch(e) {
-      window.__sunoLineageV41={
-        ok:false, error:String(e), stack:e&&e.stack||"", lastRun:Date.now()
+    }
+    workspaceState.lastReactScan=Date.now();
+  }
+
+  function workspaceScheduleReactScan() {
+    if(workspaceState.reactScanScheduled)return;
+    workspaceState.reactScanScheduled=true;
+    const runScan=()=> {
+      workspaceState.reactScanScheduled=false;
+      try { workspaceScanReactState(); } catch(error) {}
+    };
+    if(typeof requestIdleCallback==='function')requestIdleCallback(runScan,{timeout:900});
+    else window.setTimeout(runScan,120);
+  }
+
+  function workspaceQueueTask(key, task) {
+    if(workspaceState.pendingUrls.has(key))return workspaceState.pendingUrls.get(key);
+    let resolvePromise;
+    let rejectPromise;
+    const promise=new Promise((resolve,reject)=>{resolvePromise=resolve;rejectPromise=reject;});
+    workspaceState.pendingUrls.set(key,promise);
+    workspaceState.queue.push({key,task,resolve:resolvePromise,reject:rejectPromise});
+    workspacePumpQueue();
+    return promise;
+  }
+
+  function workspacePumpQueue() {
+    while(workspaceState.activeRequests<WORKSPACE_REQUEST_CONCURRENCY&&workspaceState.queue.length) {
+      const job=workspaceState.queue.shift();
+      workspaceState.activeRequests++;
+      Promise.resolve().then(job.task).then(job.resolve,job.reject).finally(()=> {
+        workspaceState.activeRequests--;
+        workspaceState.pendingUrls.delete(job.key);
+        window.setTimeout(workspacePumpQueue, 80);
+      });
+    }
+  }
+
+  function workspaceRelevantUrl(rawUrl) {
+    if(!rawUrl||!workspaceState.id)return false;
+    try {
+      const url=new URL(rawUrl,location.href);
+      if(url.hostname!=='studio-api-prod.suno.com')return false;
+      return url.pathname.includes(`/api/project/${workspaceState.id}`)||
+        /\/api\/feed\/v3\b/.test(url.pathname)||
+        /\/api\/clips\/get_songs_by_ids\b/.test(url.pathname)||
+        /\/api\/clip\//.test(url.pathname)||
+        /\/api\/clips\/[0-9a-f-]{36}\/attribution/.test(url.pathname);
+    } catch(error) { return false; }
+  }
+
+  function workspaceUrlAllowsOrder(rawUrl) {
+    if(!rawUrl||!workspaceState.id)return false;
+    try {
+      const url=new URL(rawUrl,location.href);
+      if(url.hostname!=='studio-api-prod.suno.com')return false;
+      if(/\/pinned-clips(?:[/?#]|$)/i.test(url.pathname))return false;
+      return url.pathname===`/api/project/${workspaceState.id}`||/\/api\/feed\/v3(?:[/?#]|$)/i.test(url.pathname);
+    } catch(error) { return false; }
+  }
+
+  function workspaceNextUrls(payload, currentUrl) {
+    const output=[];
+    const add=value=> {
+      if(typeof value!=='string'||!value.trim())return;
+      try {
+        const next=new URL(value,currentUrl);
+        if(next.hostname==='studio-api-prod.suno.com'&&!output.includes(next.href))output.push(next.href);
+      } catch(error) {}
+    };
+    const inspect=(object,depth=0)=> {
+      if(!object||typeof object!=='object'||depth>4)return;
+      for(const key of ['next','next_url','next_page_url','nextPageUrl'])add(object[key]);
+      const cursor=object.next_cursor||object.nextCursor||object.cursor?.next;
+      if(typeof cursor==='string'&&cursor) {
+        try {
+          const next=new URL(currentUrl);
+          next.searchParams.set('cursor',cursor);
+          add(next.href);
+        } catch(error) {}
+      }
+      for(const key of ['pagination','page_info','pageInfo','meta'])inspect(object[key],depth+1);
+    };
+    inspect(payload);
+    return output;
+  }
+
+  async function workspaceFetchJson(url, options={}) {
+    const id=workspaceEnsureCurrent();
+    if(!id)return null;
+    let normalized;
+    try { normalized=new URL(url,location.href).href; } catch(error) { return null; }
+    const generation=workspaceState.indexGeneration;
+    const key=`${generation} GET ${normalized}`;
+    if(workspaceState.fetchedUrls.has(key))return null;
+    workspaceState.fetchedUrls.add(key);
+
+    return workspaceQueueTask(key, async()=> {
+      const response=await fetch(normalized,{credentials:'include',cache:'default'});
+      if(generation!==workspaceState.indexGeneration)return null;
+      if(!response.ok)throw new Error(`Workspace request failed: ${response.status}`);
+      const contentType=response.headers.get('content-type')||'';
+      const payload=contentType.includes('json')?await response.json():await response.text();
+      workspaceIndexPayload(payload,{
+        source:options.source||'network',
+        allowOrder:options.allowOrder!==false,
+        context:normalized,
+        max:options.max||100000
+      });
+      if(options.followPages!==false) {
+        for(const nextUrl of workspaceNextUrls(payload,normalized).slice(0,3)) {
+          workspaceFetchJson(nextUrl,{...options,followPages:true}).catch(()=>{});
+        }
+      }
+      return payload;
+    });
+  }
+
+  function workspaceInstallFetchCapture() {
+    for(const key of ['__sunoWorkspaceFetchCaptureV43','__sunoWorkspaceFetchCaptureV44','__sunoWorkspaceFetchCaptureV46','__sunoWorkspaceFetchCaptureV47','__sunoWorkspaceFetchCaptureV49','__sunoWorkspaceFetchCaptureV50']) {
+      const oldHook=window[key];
+      if(oldHook?.wrapped&&window.fetch===oldHook.wrapped&&typeof oldHook.originalFetch==='function') {
+        window.fetch=oldHook.originalFetch;
+      }
+      try { delete window[key]; } catch(error) {}
+    }
+    if(window.__sunoWorkspaceFetchCaptureV51)return;
+    const originalFetch=window.fetch;
+    if(typeof originalFetch!=='function')return;
+
+    const wrapped=function(...args) {
+      const result=originalFetch.apply(this,args);
+      try {
+        const raw=typeof args[0]==='string'?args[0]:args[0]?.url;
+        Promise.resolve(result).then(response=> {
+          workspaceEnsureCurrent();
+          if(!workspaceRelevantUrl(raw)||!response?.ok)return;
+          const clone=response.clone();
+          const contentType=clone.headers.get('content-type')||'';
+          (contentType.includes('json')?clone.json():clone.text()).then(payload=> {
+            workspaceIndexPayload(payload,{source:'network',allowOrder:workspaceUrlAllowsOrder(raw),context:String(raw||''),max:100000});
+            workspaceScheduleSongDetails();
+          }).catch(()=>{});
+        }).catch(()=>{});
+      } catch(error) {}
+      return result;
+    };
+    wrapped.__sunoOriginalFetch=originalFetch;
+    window.fetch=wrapped;
+    window.__sunoWorkspaceFetchCaptureV51={originalFetch,wrapped};
+    workspaceState.fetchHookInstalled=true;
+  }
+
+  function workspaceCandidateUrls() {
+    const id=workspaceEnsureCurrent();
+    if(!id)return [];
+
+    // Only refetch endpoints whose semantics are complete in the URL itself.
+    // Suno's /api/feed/v3 request may be a POST with a workspace-specific body.
+    // Replaying that resource entry as a plain GET can return an unrelated feed
+    // and corrupt the workspace order used for virtual-list navigation.
+    return [`${STUDIO_API_BASE}/api/project/${id}`];
+  }
+
+  async function workspaceFetchSongBatch(ids) {
+    ids=[...new Set(ids.map(lnNorm).filter(Boolean))].filter(id=>!workspaceState.requestedSongIds.has(id));
+    if(!ids.length||workspaceState.failedSongBatch)return null;
+    ids.forEach(id=>workspaceState.requestedSongIds.add(id));
+
+    const buildUrl=mode=> {
+      const url=new URL(`${STUDIO_API_BASE}/api/clips/get_songs_by_ids`);
+      if(mode==='repeated')ids.forEach(id=>url.searchParams.append('ids',id));
+      else url.searchParams.set('ids',ids.join(','));
+      return url.href;
+    };
+
+    try {
+      return await workspaceFetchJson(buildUrl('repeated'),{allowOrder:false,followPages:false,max:50000});
+    } catch(firstError) {
+      try {
+        return await workspaceFetchJson(buildUrl('comma'),{allowOrder:false,followPages:false,max:50000});
+      } catch(secondError) {
+        if(ids.length>1)workspaceState.failedSongBatch=true;
+        throw secondError;
       }
     }
   }
+
+  function workspaceScheduleSongDetails() {
+    if(workspaceState.failedSongBatch)return;
+    const allIds=[...new Set([...workspaceState.networkOrder,...workspaceState.reactOrder,...workspaceState.domOrder])];
+    const missing=allIds.filter(id=> {
+      const info=lnSongInfo.get(id);
+      return !workspaceState.requestedSongIds.has(id)&&(!info?.title||!info?.image||!info?.createdAt);
+    });
+    for(let index=0;index<missing.length;index+=WORKSPACE_BATCH_SIZE) {
+      const chunk=missing.slice(index,index+WORKSPACE_BATCH_SIZE);
+      workspaceFetchSongBatch(chunk).catch(()=>{});
+    }
+  }
+
+  async function workspaceEnsureSong(id) {
+    id=lnNorm(id);
+    if(!id)return null;
+    let info=lnSongInfo.get(id);
+    if(info?.title&&info?.image&&info?.createdAt)return info;
+
+    try { await workspaceFetchSongBatch([id]); } catch(error) {}
+    info=lnSongInfo.get(id);
+    if(info?.title&&info?.image&&info?.createdAt)return info;
+
+    try {
+      await workspaceFetchJson(`${STUDIO_API_BASE}/api/clip/${id}`,{
+        allowOrder:false,followPages:false,max:20000
+      });
+    } catch(error) {}
+    return lnSongInfo.get(id)||null;
+  }
+
+  async function workspaceEnsureAttribution(id) {
+    id=lnNorm(id);
+    if(!id)return;
+    try {
+      await workspaceFetchJson(`${STUDIO_API_BASE}/api/clips/${id}/attribution`,{
+        allowOrder:false,followPages:false,max:30000
+      });
+    } catch(error) {}
+  }
+
+  async function workspaceWarmAncestry(startId, maxDepth=7, maxSongs=55) {
+    startId=lnNorm(startId);
+    if(!startId)return;
+    let frontier=[startId];
+    const visited=new Set();
+
+    for(let depth=0;depth<=maxDepth&&frontier.length&&visited.size<maxSongs;depth++) {
+      const batch=[];
+      for(const id of frontier) {
+        if(!id||visited.has(id)||visited.size+batch.length>=maxSongs)continue;
+        visited.add(id);
+        batch.push(id);
+      }
+      if(!batch.length)break;
+
+      await Promise.all(batch.flatMap(id=>[
+        workspaceEnsureSong(id).catch(()=>null),
+        workspaceEnsureAttribution(id).catch(()=>null)
+      ]));
+
+      const next=[];
+      for(const id of batch) {
+        for(const source of lnSources.get(id)||[]) {
+          if(!visited.has(source.id)&&!next.includes(source.id))next.push(source.id);
+        }
+      }
+      frontier=next;
+    }
+  }
+
+  async function workspaceBuildIndex() {
+    const id=workspaceEnsureCurrent();
+    if(!id)return;
+    const generation=workspaceState.indexGeneration;
+    workspaceInstallFetchCapture();
+    workspaceIndexVisibleRows();
+    workspaceScheduleReactScan();
+
+    for(const url of workspaceCandidateUrls()) {
+      if(generation!==workspaceState.indexGeneration)return;
+      try { await workspaceFetchJson(url,{allowOrder:true,followPages:true,max:120000}); }
+      catch(error) {}
+    }
+    if(generation!==workspaceState.indexGeneration)return;
+    workspaceScheduleSongDetails();
+  }
+
+  function workspaceKickIndexing() {
+    const id=workspaceEnsureCurrent();
+    if(!id)return;
+    const now=Date.now();
+    if(now-workspaceState.lastKick<1200)return;
+    workspaceState.lastKick=now;
+    if(!workspaceState.indexingPromise) {
+      workspaceState.indexingPromise=workspaceBuildIndex().finally(()=> {
+        workspaceState.indexingPromise=null;
+        workspaceDebugState();
+      });
+    }
+  }
+
+  function workspaceCleanupLegacyColours() {
+    for(const row of $('[data-suno-lineage-color], [data-suno-lineage-root], [data-suno-lineage-parent], [data-suno-lineage-known]')) {
+      row.removeAttribute('data-suno-lineage-color');
+      row.removeAttribute('data-suno-lineage-root');
+      row.removeAttribute('data-suno-lineage-parent');
+      row.removeAttribute('data-suno-lineage-known');
+      row.style.removeProperty('background');
+      row.style.removeProperty('background-color');
+      row.style.removeProperty('box-shadow');
+      row.style.removeProperty('border-radius');
+    }
+  }
+
+  function workspaceRefresh() {
+    workspaceCleanupLegacyColours();
+    const id=workspaceEnsureCurrent();
+    if(!id)return;
+    const now=Date.now();
+    if(now-workspaceState.lastVisibleScan>450)workspaceIndexVisibleRows();
+    if(now-workspaceState.lastReactScan>4500)workspaceScheduleReactScan();
+    if(now-lnLastDetail>350) {
+      lnLastDetail=now;
+      lnScanDetail();
+    }
+    workspaceKickIndexing();
+    workspaceDebugState();
+  }
+
+  function workspaceDebugState(extra={}) {
+    window.__sunoWorkspaceIndexV51={
+      workspaceId:workspaceState.id,
+      orderSource:workspaceOrderRecord().source,
+      indexedSongs:workspaceOrder().length,
+      metadataSongs:lnSongInfo.size,
+      timestampedSongs:[...lnSongInfo.values()].reduce((count,info)=>count+(info?.createdAt?1:0),0),
+      relationLists:lnSources.size,
+      confirmedMembers:workspaceState.memberSet.size,
+      positionedSongs:workspaceState.positionMap.size,
+      orderedSequences:workspaceState.sequences.length,
+      measuredRowStep:Math.round(workspaceState.rowStep||0),
+      activeRequests:workspaceState.activeRequests,
+      queuedRequests:workspaceState.queue.length,
+      songBatchDisabled:workspaceState.failedSongBatch,
+      lastUpdate:Date.now(),
+      ...extra
+    };
+  }
+  // ---------------------------------------------------------------------------
+  // Compact multi-branch ancestry overlay for Create rows
+  // ---------------------------------------------------------------------------
+  // The same ancestor may appear in multiple branches when sources converge. Only
+  // cycles within the current branch are stopped. Entries are rendered from the
+  // workspace index, so covers and navigation do not depend on a row being mounted.
+  const ANCESTRY_OVERLAY_ID='suno-create-ancestry-overlay';
+  const ANCESTRY_HANDLER_KEY='__sunoCreateAncestryOverlayHandlers';
+  const ANCESTRY_OPEN_DELAY=340;
+  const ANCESTRY_CLOSE_DELAY=650;
+  const ANCESTRY_MAX_DEPTH=10;
+  const ANCESTRY_MAX_ENTRIES=100;
+  const ANCESTRY_POINTER_OFFSET=14;
+  const NAV_DIAGNOSTIC_KEY='__sunoAncestryNavigationDiagnosticV51';
+  const navDiagnosticState={events:[],activeTarget:'',startedAt:Date.now()};
+
+  function navDiagnosticRows() {
+    return $('[data-testid="clip-row"]').map(row=>{
+      const id=lnRowId(row);
+      const title=row.querySelector('[class*="clip-title-wrapper"] a[href^="/song/"]')?.textContent?.trim()||
+        row.getAttribute('aria-label')||'';
+      const rect=row.getBoundingClientRect();
+      return {id,title,top:Math.round(rect.top),bottom:Math.round(rect.bottom)};
+    }).filter(item=>item.id);
+  }
+
+  function navDiagnosticContainer(container=workspaceScrollContainer()) {
+    if(!container)return null;
+    return {
+      tag:container.tagName||'',
+      id:container.id||'',
+      className:typeof container.className==='string'?container.className:'',
+      scrollTop:Math.round(container.scrollTop||0),
+      scrollHeight:Math.round(container.scrollHeight||0),
+      clientHeight:Math.round(container.clientHeight||0)
+    };
+  }
+
+  function navDiagnosticRecord(stage,targetId,extra={}) {
+    targetId=lnNorm(targetId);
+    let targetRecord={source:'',index:-1,order:[],visibleAnchors:0};
+    try { if(targetId)targetRecord=workspaceIndexRecord(targetId); } catch(error) {}
+    const event={
+      time:new Date().toISOString(),
+      elapsed:Date.now()-navDiagnosticState.startedAt,
+      stage,
+      targetId,
+      container:navDiagnosticContainer(),
+      visibleRows:navDiagnosticRows(),
+      orderSource:targetRecord.source||'',
+      targetIndex:Number.isFinite(targetRecord.index)?targetRecord.index:-1,
+      orderLength:Array.isArray(targetRecord.order)?targetRecord.order.length:0,
+      visibleAnchors:targetRecord.visibleAnchors||0,
+      ...extra
+    };
+    navDiagnosticState.events.push(event);
+    if(navDiagnosticState.events.length>180)navDiagnosticState.events.splice(0,navDiagnosticState.events.length-180);
+    return event;
+  }
+
+  function installNavigationDiagnosticApi() {
+    window[NAV_DIAGNOSTIC_KEY]={
+      version:51,
+      events:navDiagnosticState.events,
+      snapshot:(label='manual')=>navDiagnosticRecord(label,navDiagnosticState.activeTarget),
+      clear:()=>{navDiagnosticState.events.length=0;navDiagnosticState.startedAt=Date.now();},
+      export:()=>JSON.stringify({
+        version:51,
+        url:location.href,
+        exportedAt:new Date().toISOString(),
+        workspace:window.__sunoWorkspaceIndexV51||null,
+        events:navDiagnosticState.events
+      },null,2)
+    };
+  }
+
+  function lnRawSources(id) {
+    id=lnNorm(id);
+    return (lnSources.get(id)||[]).filter(source=>source?.id&&source.id!==id);
+  }
+
+  function lnSourceReaches(startId, targetId, maxDepth=14) {
+    startId=lnNorm(startId);
+    targetId=lnNorm(targetId);
+    if(!startId||!targetId)return false;
+    const queue=[{id:startId,depth:0}];
+    const visited=new Set();
+    while(queue.length) {
+      const current=queue.shift();
+      if(!current||visited.has(current.id)||current.depth>maxDepth)continue;
+      visited.add(current.id);
+      for(const source of lnRawSources(current.id)) {
+        if(source.id===targetId)return true;
+        if(!visited.has(source.id))queue.push({id:source.id,depth:current.depth+1});
+      }
+    }
+    return false;
+  }
+
+  function lnKnownSources(id) {
+    const direct=lnRawSources(id);
+    if(direct.length<2)return direct;
+
+    // Suno's "Get Whole Song" / concat metadata often names both the latest
+    // extension and the original song as direct inputs. When one candidate is
+    // already reachable through another direct candidate, it is transitive rather
+    // than an independent branch and is hidden from the direct-parent level.
+    return direct.filter(candidate=>!direct.some(other=>
+      other.id!==candidate.id&&lnSourceReaches(other.id,candidate.id)
+    ));
+  }
+
+  function lnShortId(id) {
+    id=String(id||'');
+    return id.length>13?`${id.slice(0,8)}…${id.slice(-4)}`:id;
+  }
+
+  function lnDisplayKind(kind) {
+    const labels={
+      cover:'Cover',remix:'Remix',sample:'Sample',chop_sample:'Chop sample',
+      source:'Source',reference:'Reference',extend:'Extended from',continue:'Extended from',
+      section:'Section edit',infill:'Section edit',stitch:'Stitched from',concat:'Stitched from',
+      underpainting:'Underpainting',overpainting:'Overpainting',stem_from:'Stem source',
+      stemmed:'Stem source',speed:'Speed edit',remaster:'Remaster',upsample:'Remaster',
+      edit:'Edited from',edited:'Edited from',history:'History',input:'Input',root:'Root',
+      derived:'Derived from'
+    };
+    const key=String(kind||'derived').toLowerCase();
+    return labels[key]||key.replace(/_/g,' ').replace(/\b\w/g,character=>character.toUpperCase());
+  }
+
+  function lnVisibleRow(id) {
+    id=lnNorm(id);
+    if(!id)return null;
+    for(const row of $('[data-testid="clip-row"]'))if(lnRowId(row)===id)return row;
+    return null;
+  }
+
+  function lnBuildAncestry(startId) {
+    const entries=[];
+    let truncated=false;
+    const walk=(childId,depth,path)=> {
+      if(depth>ANCESTRY_MAX_DEPTH)return;
+      for(const source of lnKnownSources(childId)) {
+        if(entries.length>=ANCESTRY_MAX_ENTRIES) {
+          truncated=true;
+          return;
+        }
+        const cycle=path.has(source.id);
+        entries.push({
+          id:source.id,
+          kind:source.kind||'derived',
+          depth,
+          cycle,
+          info:lnSongInfo.get(source.id)||{}
+        });
+        if(!cycle)walk(source.id,depth+1,new Set([...path,source.id]));
+        if(truncated)return;
+      }
+    };
+    startId=lnNorm(startId);
+    walk(startId,1,new Set([startId]));
+    return {entries,truncated};
+  }
+
+  function workspaceScrollContainer() {
+    const row=document.querySelector('[data-testid="clip-row"]');
+    let node=row?.parentElement;
+    let fallback=null;
+    while(node&&node!==document.body) {
+      const style=getComputedStyle(node);
+      const canScroll=/(auto|scroll)/.test(style.overflowY)&&node.scrollHeight>node.clientHeight+40;
+      if(canScroll) {
+        fallback=node;
+        if(node.clientHeight>240)return node;
+      }
+      node=node.parentElement;
+    }
+    return fallback||document.scrollingElement||document.documentElement;
+  }
+
+  function workspaceVisibleAnchors(order=workspaceOrder()) {
+    const output=[];
+    for(const row of $('[data-testid="clip-row"]')) {
+      const id=lnRowId(row);
+      const index=order.indexOf(id);
+      if(index<0)continue;
+      output.push({id,index,row,rect:row.getBoundingClientRect()});
+    }
+    return output.sort((a,b)=>a.rect.top-b.rect.top);
+  }
+
+  function workspaceEstimateRowStep(anchors) {
+    const values=[];
+    for(let index=1;index<anchors.length;index++) {
+      const previous=anchors[index-1];
+      const current=anchors[index];
+      const indexDelta=current.index-previous.index;
+      const pixelDelta=current.rect.top-previous.rect.top;
+      if(indexDelta>0&&pixelDelta>4)values.push(pixelDelta/indexDelta);
+    }
+    if(values.length) {
+      values.sort((a,b)=>a-b);
+      return values[Math.floor(values.length/2)];
+    }
+    const height=anchors[0]?.rect.height||72;
+    return Math.max(46,height+4);
+  }
+
+  function workspaceMedian(values) {
+    values=values.filter(Number.isFinite).sort((a,b)=>a-b);
+    if(!values.length)return NaN;
+    const middle=Math.floor(values.length/2);
+    return values.length%2?values[middle]:(values[middle-1]+values[middle])/2;
+  }
+
+  function workspaceChronologyPosition(id) {
+    id=lnNorm(id);
+    if(!id)return null;
+    const targetInfo=lnSongInfo.get(id)||{};
+    if(!targetInfo.createdAt)return null;
+
+    const candidateIds=new Set([
+      ...workspaceState.memberSet,
+      ...workspaceState.domSet,
+      ...workspaceState.networkSet,
+      ...workspaceState.reactSet,
+      id
+    ]);
+    const candidates=[...candidateIds].map(songId=>({
+      id:songId,
+      createdAt:Number(lnSongInfo.get(songId)?.createdAt||0),
+      observed:workspaceState.positionMap.get(songId)||null
+    })).filter(item=>item.createdAt>0);
+    if(candidates.length<4)return null;
+
+    // Determine whether the current workspace is newest-first or oldest-first from
+    // real measured rows. This avoids assuming that every Suno workspace uses the
+    // same sort direction.
+    const observedByTop=candidates.filter(item=>item.observed).sort((a,b)=>a.observed.top-b.observed.top);
+    let directionScore=0;
+    for(let index=1;index<observedByTop.length;index++) {
+      const delta=observedByTop[index].createdAt-observedByTop[index-1].createdAt;
+      if(delta>0)directionScore++;
+      else if(delta<0)directionScore--;
+    }
+    const oldestFirst=directionScore>0;
+
+    candidates.sort((a,b)=> {
+      const timeDelta=oldestFirst?a.createdAt-b.createdAt:b.createdAt-a.createdAt;
+      if(timeDelta)return timeDelta;
+      const aTop=a.observed?.top;
+      const bTop=b.observed?.top;
+      if(Number.isFinite(aTop)&&Number.isFinite(bTop))return aTop-bTop;
+      if(Number.isFinite(aTop))return -1;
+      if(Number.isFinite(bTop))return 1;
+      return a.id.localeCompare(b.id);
+    });
+
+    const targetIndex=candidates.findIndex(item=>item.id===id);
+    if(targetIndex<0)return null;
+    const anchors=candidates.map((item,index)=>item.observed?{index,top:item.observed.top}:null).filter(Boolean);
+    if(!anchors.length)return null;
+
+    const slopes=[];
+    for(let left=0;left<anchors.length;left++)for(let right=left+1;right<anchors.length;right++) {
+      const indexDelta=anchors[right].index-anchors[left].index;
+      const topDelta=anchors[right].top-anchors[left].top;
+      const slope=indexDelta?topDelta/indexDelta:0;
+      if(slope>35&&slope<260)slopes.push(slope);
+    }
+    let step=workspaceMedian(slopes);
+    if(!Number.isFinite(step))step=Number(workspaceState.rowStep||111);
+    if(!Number.isFinite(step)||step<35||step>260)return null;
+
+    const intercept=workspaceMedian(anchors.map(anchor=>anchor.top-anchor.index*step));
+    if(!Number.isFinite(intercept))return null;
+    const errors=anchors.map(anchor=>Math.abs(anchor.top-(intercept+anchor.index*step)));
+    const medianError=workspaceMedian(errors);
+    const maxError=Math.max(...errors,0);
+
+    // Creation timestamps are allowed a small amount of uncertainty because Suno
+    // often creates paired generations within the same millisecond. Large errors,
+    // however, mean the current Create view is not sorted chronologically.
+    if(anchors.length>=3&&medianError>step*0.8)return null;
+    if(anchors.length>=5&&maxError>step*2.4)return null;
+
+    return {
+      top:intercept+targetIndex*step,
+      source:'created-at',
+      anchors:anchors.length,
+      error:medianError,
+      maxError,
+      step,
+      targetIndex,
+      sequenceLength:candidates.length,
+      oldestFirst
+    };
+  }
+
+  function workspaceSequencePosition(id) {
+    id=lnNorm(id);
+    if(!id)return null;
+    const exact=workspaceState.positionMap.get(id);
+    if(exact)return {top:exact.top,source:'observed',anchors:1,error:0};
+
+    const chronology=workspaceChronologyPosition(id);
+    let best=chronology?{...chronology,score:chronology.anchors*1200-chronology.error}:null;
+    for(const sequence of workspaceState.sequences) {
+      const originalIndex=sequence.ids.indexOf(id);
+      if(originalIndex<0)continue;
+      for(const reversed of [false,true]) {
+        const ids=reversed?[...sequence.ids].reverse():sequence.ids;
+        const targetIndex=ids.indexOf(id);
+        const anchors=[];
+        ids.forEach((songId,index)=> {
+          const position=workspaceState.positionMap.get(songId);
+          if(position)anchors.push({index,top:position.top});
+        });
+        if(anchors.length<2)continue;
+
+        const slopes=[];
+        for(let left=0;left<anchors.length;left++)for(let right=left+1;right<anchors.length;right++) {
+          const indexDelta=anchors[right].index-anchors[left].index;
+          const topDelta=anchors[right].top-anchors[left].top;
+          if(indexDelta&&topDelta/indexDelta>35&&topDelta/indexDelta<260)slopes.push(topDelta/indexDelta);
+        }
+        const step=workspaceMedian(slopes);
+        if(!Number.isFinite(step))continue;
+        const intercept=workspaceMedian(anchors.map(anchor=>anchor.top-anchor.index*step));
+        const errors=anchors.map(anchor=>Math.abs(anchor.top-(intercept+anchor.index*step)));
+        const error=Math.max(...errors,0);
+        if(error>Math.max(30,step*0.55))continue;
+
+        const candidate={
+          top:intercept+targetIndex*step,
+          source:`${sequence.source}-sequence`,
+          anchors:anchors.length,
+          error,
+          step,
+          reversed,
+          sequenceLength:ids.length,
+          context:sequence.context,
+          path:sequence.path
+        };
+        const score=anchors.length*1000-error-(Math.abs(step-(workspaceState.rowStep||step))*2);
+        if(!best||score>best.score)best={...candidate,score};
+      }
+    }
+    return best;
+  }
+
+  function workspaceSetScrollAnchoring(container,disabled) {
+    if(!container)return ()=>{};
+    const value=container.style.getPropertyValue('overflow-anchor');
+    const priority=container.style.getPropertyPriority('overflow-anchor');
+    if(disabled)container.style.setProperty('overflow-anchor','none','important');
+    return ()=> {
+      if(value)container.style.setProperty('overflow-anchor',value,priority);
+      else container.style.removeProperty('overflow-anchor');
+    };
+  }
+
+  async function workspaceRevealRow(row, container=workspaceScrollContainer()) {
+    if(!row||!container)return row;
+    const rect=row.getBoundingClientRect();
+    const box=container.getBoundingClientRect();
+    const margin=36;
+    let movement=0;
+    if(rect.top<box.top+margin)movement=rect.top-(box.top+margin);
+    else if(rect.bottom>box.bottom-margin)movement=rect.bottom-(box.bottom-margin);
+    if(Math.abs(movement)>2) {
+      const restoreAnchor=workspaceSetScrollAnchoring(container,true);
+      container.scrollTo({top:Math.max(0,container.scrollTop+movement),behavior:'auto'});
+      await new Promise(resolve=>window.setTimeout(resolve,120));
+      restoreAnchor();
+    }
+    return row;
+  }
+
+  function workspaceHighlightRow(row) {
+    if(!row)return null;
+    row.classList.remove('suno-ancestry-jump-highlight');
+    void row.offsetWidth;
+    row.classList.add('suno-ancestry-jump-highlight');
+    window.setTimeout(()=>row.classList.remove('suno-ancestry-jump-highlight'),1500);
+    return row;
+  }
+
+  function workspaceSelectRow(row,id) {
+    id=lnNorm(id);
+    if(!row||!id)return false;
+
+    const titleLink=[...row.querySelectorAll('a[href^="/song/"]')].find(anchor=>
+      lnLinkId(anchor)===id&&Boolean(anchor.closest('[class*="clip-title-wrapper"]'))
+    );
+    const titleWrapper=titleLink?.closest('[class*="clip-title-wrapper"]')||
+      row.querySelector('[class*="clip-title-wrapper"]');
+    const target=titleWrapper||row;
+
+    try {
+      target.dispatchEvent(new MouseEvent('click',{
+        bubbles:true,cancelable:true,view:window,button:0,buttons:0
+      }));
+      row.dataset.sunoAncestrySelected=String(Date.now());
+      window.setTimeout(()=>delete row.dataset.sunoAncestrySelected,1200);
+      return true;
+    } catch(error) {
+      return false;
+    }
+  }
+
+  async function workspaceWaitForRow(id, timeout=1500) {
+    const start=Date.now();
+    while(Date.now()-start<timeout) {
+      const row=lnVisibleRow(id);
+      if(row)return row;
+      workspaceIndexVisibleRows();
+      await new Promise(resolve=>window.setTimeout(resolve,100));
+    }
+    return null;
+  }
+
+  async function workspaceJumpToSong(id) {
+    id=lnNorm(id);
+    if(!id)return null;
+    navDiagnosticState.activeTarget=id;
+    navDiagnosticRecord('jump:start',id);
+    let row=lnVisibleRow(id);
+    const container=workspaceScrollContainer();
+    if(row) {
+      navDiagnosticRecord('jump:already-mounted',id);
+      await workspaceRevealRow(row,container);
+      return workspaceHighlightRow(row);
+    }
+
+    await workspaceBuildIndex().catch(error=>navDiagnosticRecord('jump:index-error',id,{message:String(error?.message||error)}));
+    workspaceIndexVisibleRows();
+    const position=workspaceSequencePosition(id);
+    if(!position||!Number.isFinite(position.top)) {
+      navDiagnosticRecord('jump:no-position',id,{
+        positionedSongs:workspaceState.positionMap.size,
+        orderedSequences:workspaceState.sequences.length
+      });
+      return null;
+    }
+
+    const before=container.scrollTop;
+    const maximum=Math.max(0,container.scrollHeight-container.clientHeight);
+    const proposed=Math.max(0,Math.min(maximum,position.top-container.clientHeight*0.34));
+    const restoreAnchor=workspaceSetScrollAnchoring(container,true);
+    navDiagnosticRecord('jump:before-position-scroll',id,{
+      before,proposed,maximum,positionSource:position.source,
+      positionTop:position.top,positionAnchors:position.anchors,
+      positionError:position.error,positionStep:position.step||workspaceState.rowStep
+    });
+
+    container.scrollTo({top:proposed,behavior:'auto'});
+    row=await workspaceWaitForRow(id,1350);
+    const after=container.scrollTop;
+    navDiagnosticRecord('jump:after-position-scroll',id,{
+      before,proposed,after,targetMounted:Boolean(row),
+      unexpectedMovement:Math.abs(after-proposed)
+    });
+
+    if(!row) {
+      // A direct virtual-position jump must never turn into a list traversal. If
+      // Suno cannot mount the target from its existing cache, restore the user's
+      // previous position and leave the workspace contents untouched.
+      container.scrollTo({top:before,behavior:'auto'});
+      await new Promise(resolve=>window.setTimeout(resolve,100));
+      restoreAnchor();
+      navDiagnosticRecord('jump:restored',id,{restoredTo:container.scrollTop});
+      return null;
+    }
+
+    await workspaceRevealRow(row,container);
+    restoreAnchor();
+    workspaceIndexVisibleRows();
+    navDiagnosticRecord('jump:success',id,{finalScrollTop:container.scrollTop});
+    return workspaceHighlightRow(row);
+  }
+
+  function installAncestryOverlay() {
+    const previous=window[ANCESTRY_HANDLER_KEY];
+    if(previous) {
+      document.removeEventListener('pointerover',previous.onPointerOver,true);
+      document.removeEventListener('pointerout',previous.onPointerOut,true);
+      document.removeEventListener('pointermove',previous.onPointerMove,true);
+      document.removeEventListener('pointerdown',previous.onPointerDown,true);
+      document.removeEventListener('keydown',previous.onKeyDown,true);
+      window.removeEventListener('scroll',previous.onViewportChange,true);
+      window.removeEventListener('resize',previous.onViewportChange,true);
+      previous.destroy?.();
+    }
+    document.getElementById(ANCESTRY_OVERLAY_ID)?.remove();
+
+    let overlay=null;
+    let activeRow=null;
+    let openTimer=0;
+    let closeTimer=0;
+    let showToken=0;
+    let pointerAnchor={x:Math.round(window.innerWidth/2),y:Math.round(window.innerHeight/2)};
+
+    const clearOpen=()=> {
+      if(openTimer)clearTimeout(openTimer);
+      openTimer=0;
+    };
+    const clearClose=()=> {
+      if(closeTimer)clearTimeout(closeTimer);
+      closeTimer=0;
+    };
+    const hide=()=> {
+      showToken++;
+      clearOpen();
+      clearClose();
+      overlay?.remove();
+      overlay=null;
+      activeRow=null;
+      window.__sunoAncestryOverlayV51={
+        ...(window.__sunoAncestryOverlayV51||{}),open:false,lastClose:Date.now()
+      };
+    };
+    const scheduleClose=()=> {
+      clearClose();
+      closeTimer=window.setTimeout(hide,ANCESTRY_CLOSE_DELAY);
+    };
+    const position=(row,panel)=> {
+      const width=Math.max(320,Math.min(590,window.innerWidth-20));
+      const x=Math.max(0,Math.min(window.innerWidth,pointerAnchor.x||0));
+      const y=Math.max(0,Math.min(window.innerHeight,pointerAnchor.y||0));
+      let left=x+ANCESTRY_POINTER_OFFSET;
+      let top=y+ANCESTRY_POINTER_OFFSET;
+      panel.style.setProperty('width',`${Math.round(width)}px`,'important');
+      panel.style.setProperty('left',`${Math.round(Math.max(8,Math.min(left,window.innerWidth-width-8)))}px`,'important');
+      panel.style.setProperty('top',`${Math.round(Math.max(8,top))}px`,'important');
+      requestAnimationFrame(()=> {
+        if(!panel.isConnected)return;
+        const rect=panel.getBoundingClientRect();
+        if(rect.right>window.innerWidth-8)left=x-rect.width-ANCESTRY_POINTER_OFFSET;
+        if(rect.bottom>window.innerHeight-8)top=y-rect.height-ANCESTRY_POINTER_OFFSET;
+        panel.style.setProperty('left',`${Math.round(Math.max(8,Math.min(left,window.innerWidth-rect.width-8)))}px`,'important');
+        panel.style.setProperty('top',`${Math.round(Math.max(8,Math.min(top,window.innerHeight-rect.height-8)))}px`,'important');
+      });
+    };
+
+
+    const createShell=(row,id,statusText='Loading ancestry…')=> {
+      overlay?.remove();
+      activeRow=row;
+      overlay=document.createElement('div');
+      overlay.id=ANCESTRY_OVERLAY_ID;
+      overlay.setAttribute('role','dialog');
+      overlay.setAttribute('aria-label','Known song ancestry');
+
+      const header=document.createElement('div');
+      header.className='suno-ancestry-header';
+      const heading=document.createElement('span');
+      heading.textContent='Ancestry';
+      const count=document.createElement('span');
+      count.textContent='';
+      header.append(heading,count);
+
+      const list=document.createElement('div');
+      list.className='suno-ancestry-list';
+      const status=document.createElement('div');
+      status.className='suno-ancestry-status';
+      status.textContent=statusText;
+      list.appendChild(status);
+
+      overlay.append(header,list);
+      overlay.addEventListener('pointerenter',clearClose);
+      overlay.addEventListener('pointerleave',scheduleClose);
+      document.body.appendChild(overlay);
+      position(row,overlay);
+      return {header,count,list};
+    };
+
+    const renderTree=(row,id,tree,token)=> {
+      if(token!==showToken||activeRow!==row||!overlay?.isConnected)return;
+      const list=overlay.querySelector('.suno-ancestry-list');
+      const count=overlay.querySelector('.suno-ancestry-header span:last-child');
+      if(!list||!count)return;
+      list.textContent='';
+      count.textContent=`${tree.entries.length} source${tree.entries.length===1?'':'s'}`;
+
+      if(!tree.entries.length) {
+        const status=document.createElement('div');
+        status.className='suno-ancestry-status';
+        status.textContent='No known sources were found for this song.';
+        list.appendChild(status);
+      }
+
+      for(const entry of tree.entries) {
+        const inWorkspace=workspaceHasSong(entry.id);
+        const canSearch=!entry.cycle;
+        const item=document.createElement('button');
+        item.type='button';
+        item.className='suno-ancestry-entry';
+        item.dataset.songId=entry.id;
+        item.dataset.available=String(canSearch);
+        item.dataset.workspaceState=inWorkspace?'confirmed':'unknown';
+        item.style.setProperty('--suno-ancestry-depth',String(entry.depth));
+        item.disabled=!canSearch;
+        item.title=inWorkspace?'Scroll to this song in the current Create workspace':
+          'Search for this song in the current Create workspace';
+
+        const image=String(entry.info?.image||'');
+        let artwork;
+        if(image) {
+          artwork=document.createElement('img');
+          artwork.className='suno-ancestry-art';
+          artwork.alt='';
+          artwork.loading='lazy';
+          artwork.src=U(image);
+        } else {
+          artwork=document.createElement('span');
+          artwork.className='suno-ancestry-art-placeholder';
+          artwork.textContent='♪';
+        }
+
+        const copy=document.createElement('span');
+        copy.className='suno-ancestry-copy';
+        const title=document.createElement('span');
+        title.className='suno-ancestry-title';
+        title.textContent=String(entry.info?.title||'Unknown song');
+        const shortId=document.createElement('span');
+        shortId.className='suno-ancestry-id';
+        shortId.textContent=entry.cycle?`${lnShortId(entry.id)} · cycle stopped`:lnShortId(entry.id);
+        if(entry.cycle)shortId.classList.add('suno-ancestry-cycle');
+        copy.append(title,shortId);
+
+        const kind=document.createElement('span');
+        kind.className='suno-ancestry-kind';
+        kind.textContent=lnDisplayKind(entry.kind);
+        item.append(artwork,copy,kind);
+
+        if(canSearch)item.addEventListener('click',async event=> {
+          event.preventDefault();
+          event.stopPropagation();
+          const targetId=item.dataset.songId;
+          hide();
+          const targetRow=await workspaceJumpToSong(targetId);
+          if(targetRow) {
+            await new Promise(resolve=>window.setTimeout(resolve,180));
+            workspaceSelectRow(targetRow,targetId);
+          }
+        });
+        list.appendChild(item);
+      }
+
+      if(tree.truncated) {
+        const more=document.createElement('div');
+        more.className='suno-ancestry-more';
+        more.textContent=`More than ${ANCESTRY_MAX_ENTRIES} known ancestry entries; remaining branches are hidden.`;
+        list.appendChild(more);
+      }
+      position(row,overlay);
+      window.__sunoAncestryOverlayV51={
+        open:true,songId:id,entries:tree.entries.length,truncated:tree.truncated,
+        workspaceSongs:workspaceOrder().length,knownSourceLists:lnSources.size,lastOpen:Date.now()
+      };
+    };
+
+    const show=async row=> {
+      clearOpen();
+      clearClose();
+      if(!row?.isConnected)return;
+      const id=lnRowId(row);
+      if(!id)return;
+      const token=++showToken;
+      lnRememberRow(row);
+      lnScanRow(row);
+      workspaceRefresh();
+      createShell(row,id);
+
+      const existingTree=lnBuildAncestry(id);
+      if(existingTree.entries.length)renderTree(row,id,existingTree,token);
+
+      workspaceWarmAncestry(id).then(()=> {
+        if(token!==showToken||activeRow!==row||!row.isConnected)return;
+        renderTree(row,id,lnBuildAncestry(id),token);
+      }).catch(()=> {
+        if(token!==showToken||activeRow!==row||!row.isConnected)return;
+        renderTree(row,id,lnBuildAncestry(id),token);
+      });
+    };
+
+    const scheduleOpen=(row,point)=> {
+      if(point&&Number.isFinite(point.x)&&Number.isFinite(point.y))pointerAnchor={x:point.x,y:point.y};
+      clearOpen();
+      clearClose();
+      if(activeRow&&activeRow!==row) {
+        overlay?.remove();
+        overlay=null;
+        activeRow=null;
+      }
+      openTimer=window.setTimeout(()=>show(row),ANCESTRY_OPEN_DELAY);
+    };
+
+    const onPointerOver=event=> {
+      if(event.target.closest?.(`#${ANCESTRY_OVERLAY_ID}`)) {
+        clearClose();
+        return;
+      }
+      const row=event.target.closest?.('[data-testid="clip-row"]');
+      if(!row||row.contains(event.relatedTarget))return;
+      scheduleOpen(row,{x:event.clientX,y:event.clientY});
+    };
+
+
+    const onPointerMove=event=> {
+      if(overlay)return;
+      const row=event.target.closest?.('[data-testid="clip-row"]');
+      if(!row)return;
+      pointerAnchor={x:event.clientX,y:event.clientY};
+    };
+
+    const onPointerOut=event=> {
+      const row=event.target.closest?.('[data-testid="clip-row"]');
+      if(!row||row.contains(event.relatedTarget))return;
+      const related=event.relatedTarget;
+      if(overlay&&(related===overlay||overlay.contains(related))) {
+        clearClose();
+        return;
+      }
+      if(related?.id==='suno-song-title-exact-overlay')return;
+      clearOpen();
+      scheduleClose();
+    };
+
+    const onPointerDown=event=> {
+      if(overlay&&(event.target===overlay||overlay.contains(event.target)))return;
+      if(event.target.closest?.('[data-testid="clip-row"]'))return;
+      hide();
+    };
+    const onKeyDown=event=> { if(event.key==='Escape')hide(); };
+    const onViewportChange=event=> {
+      if(event?.type==='scroll'&&overlay&&(event.target===overlay||overlay.contains(event.target)))return;
+      hide();
+    };
+    const destroy=()=>hide();
+    const handlers={onPointerOver,onPointerOut,onPointerMove,onPointerDown,onKeyDown,onViewportChange,destroy};
+    window[ANCESTRY_HANDLER_KEY]=handlers;
+    document.addEventListener('pointerover',onPointerOver,true);
+    document.addEventListener('pointerout',onPointerOut,true);
+    document.addEventListener('pointermove',onPointerMove,true);
+    document.addEventListener('pointerdown',onPointerDown,true);
+    document.addEventListener('keydown',onKeyDown,true);
+    window.addEventListener('scroll',onViewportChange,true);
+    window.addEventListener('resize',onViewportChange,true);
+  }
   lnLoad();
+  installNavigationDiagnosticApi();
+  workspaceCleanupLegacyColours();
+  workspaceInstallFetchCapture();
   try {
     delete window.__sunoLineageV27;
-    delete window.__sunoLineageV28
-  } catch(e) {
-  }
+    delete window.__sunoLineageV28;
+    delete window.__sunoLineageV42;
+    delete window.__sunoWorkspaceIndexV43;
+    delete window.__sunoAncestryOverlayV43;
+  } catch(error) {}
   // Force the Create-page title edit button to remain visible.
 function createTitleEdit() {
     $('[data-testid="clip-row"] button[aria-label="Edit title"]').forEach(b=> {
@@ -1580,7 +3153,7 @@ function run() {
     playlistCovers();
     playlistLikes();
     createTitleEdit();
-    createLineageColorsSafe();
+    workspaceRefresh();
     layoutCards();
     prepareSongTitleExpansion();
     let nr=layoutNewRows(), ch=applyPins();
@@ -1604,6 +3177,7 @@ let raf=0, sched=()=>raf||(raf=requestAnimationFrame(()=> {
     run()
   }));
   installSongTitleExpansion();
+  installAncestryOverlay();
   run();
   window[OBS]=new MutationObserver(sched);
   window[OBS].observe(document.body, {
@@ -1614,4 +3188,4 @@ let raf=0, sched=()=>raf||(raf=requestAnimationFrame(()=> {
   })
 })();
 
-//# sourceURL=suno-tweaks-v41-readable.js
+//# sourceURL=suno-tweaks-v51-chronological-workspace-navigation.js
