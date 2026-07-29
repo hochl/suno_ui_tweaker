@@ -1,5 +1,5 @@
 /**
- * Suno Tweaks v64 — readable local script
+ * Suno Tweaks v65 — readable local script
  *
  * Loaded by the persistent local-file bookmarklet. The script keeps the accepted
  * layout, playlist, title-edit and title-expansion behaviour while adding a compact
@@ -16,13 +16,14 @@
  * - Browser scroll anchoring is disabled only during a controlled ancestry jump.
  * - The ancestry popup expands to the viewport, then scales to 66%, then scrolls.
  * - Repeated ancestors remain fully visible; arrows to the same target merge into a shared yellow trunk with hollow junction circles.
+ * - The player time follows the progress thumb and can be edited to seek precisely.
  *
  * Debug objects:
  * - window.__sunoLocalScriptLoader     — loader status
- * - window.__sunoWorkspaceIndexV64     — workspace indexing status
- * - window.__sunoAncestryOverlayV64    — ancestry overlay status
- * - window.__sunoAncestryNavigationDiagnosticV64 — navigation event log
- * - window.__sunoCreditsV64        — exact credit balance and refresh status
+ * - window.__sunoWorkspaceIndexV65     — workspace indexing status
+ * - window.__sunoAncestryOverlayV65    — ancestry overlay status
+ * - window.__sunoAncestryNavigationDiagnosticV65 — navigation event log
+ * - window.__sunoCreditsV65        — exact credit balance and refresh status
  */
 
 (()=> {
@@ -73,6 +74,11 @@ button[aria-label="Playing"][class*="rounded-full"][class*="bg-background"],butt
 [data-pb=pr]{width:100%!important;max-width:none!important;min-width:0!important;--min-target-size:${PBS}rem!important;--button-width:${.75*PBS}rem!important;--button-height:${.75*PBS}rem!important;--button-border-width:${.125*PBS}rem!important;--track-width:${.25*PBS}rem!important}
 [data-pb=pr] input[aria-label="Playback progress"]{height:${PBS}rem!important}
 [data-pb=tr]{flex:1 1 auto!important;min-width:0!important;max-width:none!important;width:auto!important;min-height:${PBS}rem!important}
+[data-pb=tr]{position:relative!important;overflow:visible!important}
+.suno-editable-seek-time{position:absolute!important;z-index:2147483000!important;display:block!important;width:auto!important;min-width:48px!important;max-width:86px!important;height:20px!important;box-sizing:border-box!important;padding:1px 5px!important;border:1px solid transparent!important;border-radius:5px!important;outline:none!important;background:rgba(15,15,17,.88)!important;color:rgba(255,255,255,.88)!important;box-shadow:0 2px 7px rgba(0,0,0,.32)!important;font-family:ui-monospace,SFMono-Regular,Consolas,monospace!important;font-size:11px!important;font-weight:600!important;line-height:16px!important;text-align:center!important;font-variant-numeric:tabular-nums!important;white-space:nowrap!important;transform:translate(-50%,-100%)!important;cursor:text!important;pointer-events:auto!important;user-select:text!important}
+.suno-editable-seek-time:hover{background:rgba(30,30,33,.96)!important;color:#fff!important}
+.suno-editable-seek-time[data-editing="true"]{min-width:62px!important;border-color:rgba(255,218,76,.88)!important;background:rgba(20,20,22,.99)!important;color:#fff!important;box-shadow:0 0 0 2px rgba(255,218,76,.15),0 3px 9px rgba(0,0,0,.42)!important}
+.suno-editable-seek-time[data-invalid="true"]{border-color:rgba(255,105,105,.95)!important;box-shadow:0 0 0 2px rgba(255,105,105,.14),0 3px 9px rgba(0,0,0,.42)!important}
 [data-pinproxy=1]{width:${W}px!important;max-width:${W}px!important;order:0}
 [data-pinproxy=1] .clip-image-container{cursor:pointer!important}
 [data-pinproxy=1] [data-pplay]{position:absolute!important;left:50%!important;top:50%!important;transform:translate(-50%,-50%)!important;width:52px!important;height:52px!important;border-radius:999px!important;border:0!important;background:transparent!important;background-color:transparent!important;box-shadow:none!important;backdrop-filter:none!important;-webkit-backdrop-filter:none!important;color:white!important;font-size:22px!important;opacity:0!important;cursor:pointer!important;transition:opacity .12s ease!important}
@@ -231,6 +237,281 @@ function wide() {
       }
     })
   }
+  // ---------------------------------------------------------------------------
+  // Editable player time above the progress thumb
+  // ---------------------------------------------------------------------------
+  const EDITABLE_SEEK_KEY='__sunoEditableSeekTimeV65';
+  const editableSeekState={controls:new Set(),timer:0,lastError:''};
+
+  function seekParseTime(raw) {
+    const value=String(raw||'').trim().replace(',', '.');
+    if(!value)return NaN;
+    if(/^\d+(?:\.\d+)?$/.test(value))return Number(value);
+    const parts=value.split(':');
+    if(parts.length<2||parts.length>3||parts.some(part=>!/^\d+(?:\.\d+)?$/.test(part)))return NaN;
+    let seconds=0;
+    for(const part of parts)seconds=seconds*60+Number(part);
+    return seconds;
+  }
+
+  function seekFormatTime(raw) {
+    const seconds=Math.max(0,Number.isFinite(Number(raw))?Math.floor(Number(raw)):0);
+    const hours=Math.floor(seconds/3600);
+    const minutes=Math.floor((seconds%3600)/60);
+    const rest=seconds%60;
+    return hours?`${hours}:${String(minutes).padStart(2,'0')}:${String(rest).padStart(2,'0')}`:
+      `${minutes}:${String(rest).padStart(2,'0')}`;
+  }
+
+  function seekTimeStrings(root) {
+    const values=[];
+    for(const node of root?.querySelectorAll?.('span,p,div')||[]) {
+      if(node.children.length)continue;
+      const text=String(node.textContent||'').trim();
+      if(!/^\d{1,3}:\d{2}(?::\d{2})?$/.test(text))continue;
+      const seconds=seekParseTime(text);
+      if(Number.isFinite(seconds))values.push({node,text,seconds});
+    }
+    return values;
+  }
+
+  function seekMediaElement() {
+    const audio=[...document.querySelectorAll('audio')];
+    const video=[...document.querySelectorAll('video')].filter(media=>!media.closest('.clip-image-container'));
+    const media=[...audio,...video].filter(item=>Number.isFinite(item.duration)&&item.duration>0);
+    return media.find(item=>!item.paused&&!item.ended)||
+      media.find(item=>item.currentTime>0&&item.currentSrc)||
+      media.find(item=>item.currentSrc)||media[0]||null;
+  }
+
+  function seekSliderNumbers(slider) {
+    let minimum=Number(slider.min);
+    let maximum=Number(slider.max);
+    let value=Number(slider.value);
+    if(!Number.isFinite(minimum))minimum=0;
+    if(!Number.isFinite(maximum)||maximum<=minimum)maximum=100;
+    if(!Number.isFinite(value))value=minimum;
+    const ratio=Math.max(0,Math.min(1,(value-minimum)/(maximum-minimum)));
+    return {minimum,maximum,value,ratio};
+  }
+
+  function seekSnapshot(control) {
+    const {root,slider,progressRow}=control;
+    const media=seekMediaElement();
+    const numbers=seekSliderNumbers(slider);
+    const labels=seekTimeStrings(progressRow||root);
+    let duration=media?.duration;
+    if(!Number.isFinite(duration)||duration<=0)duration=labels.length?Math.max(...labels.map(item=>item.seconds)):0;
+    if((!duration||duration<=0)&&numbers.maximum>1.5&&numbers.maximum<86400)duration=numbers.maximum;
+
+    let current=media?.currentTime;
+    if(!Number.isFinite(current)||current<0) {
+      if(labels.length>=2)current=labels[0].seconds;
+      else current=duration>0?numbers.ratio*duration:(numbers.maximum>1.5?numbers.value:0);
+    }
+    if(duration>0)current=Math.max(0,Math.min(duration,current));
+    else current=Math.max(0,current||0);
+    return {media,duration,current,ratio:duration>0?current/duration:numbers.ratio,numbers};
+  }
+
+  function seekSetNativeRangeValue(slider,value) {
+    const oldValue=String(slider.value);
+    const setter=Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value')?.set;
+    try {
+      if(slider._valueTracker)slider._valueTracker.setValue(oldValue);
+      if(setter)setter.call(slider,String(value));
+      else slider.value=String(value);
+    } catch(error) {
+      slider.value=String(value);
+    }
+    slider.dispatchEvent(new InputEvent('input',{bubbles:true,inputType:'insertReplacementText',data:String(value)}));
+    slider.dispatchEvent(new Event('change',{bubbles:true}));
+  }
+
+  function seekPause(control) {
+    const button=control.root.querySelector('button[aria-label="Pause"],button[aria-label^="Pause "],button[aria-label="Playing"],button[aria-label^="Playing "]');
+    if(button)press(button);
+    else {
+      const media=seekMediaElement();
+      try { media?.pause(); } catch(error) {}
+    }
+  }
+
+  function seekPlay(control) {
+    const attempt=()=> {
+      const button=control.root.querySelector('button[aria-label="Play"],button[aria-label^="Play "]');
+      if(button)press(button);
+      else {
+        const media=seekMediaElement();
+        try { media?.play?.().catch?.(()=>{}); } catch(error) {}
+      }
+    };
+    window.setTimeout(attempt,70);
+  }
+
+  function seekToSeconds(control,requested) {
+    const snapshot=seekSnapshot(control);
+    let seconds=Number(requested);
+    if(!Number.isFinite(seconds)||seconds<0)return false;
+    if(snapshot.duration>0)seconds=Math.min(snapshot.duration,seconds);
+    const ratio=snapshot.duration>0?seconds/snapshot.duration:Math.max(0,Math.min(1,seconds/(snapshot.numbers.maximum||1)));
+    const rangeValue=snapshot.numbers.minimum+ratio*(snapshot.numbers.maximum-snapshot.numbers.minimum);
+    seekSetNativeRangeValue(control.slider,rangeValue);
+    if(snapshot.media) {
+      try { snapshot.media.currentTime=seconds; } catch(error) {}
+    }
+    control.lastCommitted=seconds;
+    return true;
+  }
+
+  function seekPositionControl(control,snapshot=seekSnapshot(control)) {
+    const {editor,slider,track}=control;
+    if(!editor.isConnected||!slider.isConnected||!track.isConnected)return false;
+    const trackRect=track.getBoundingClientRect();
+    const sliderRect=slider.getBoundingClientRect();
+    const ratio=Math.max(0,Math.min(1,snapshot.ratio||0));
+    const rawX=sliderRect.left-trackRect.left+sliderRect.width*ratio;
+    const half=Math.max(24,editor.getBoundingClientRect().width/2||24);
+    const x=Math.max(half,Math.min(Math.max(half,trackRect.width-half),rawX));
+    const y=sliderRect.top-trackRect.top-3;
+    editor.style.setProperty('left',`${x}px`,'important');
+    editor.style.setProperty('top',`${y}px`,'important');
+    return true;
+  }
+
+  function seekBeginEdit(control) {
+    const {editor}=control;
+    if(editor.dataset.editing==='true')return;
+    const snapshot=seekSnapshot(control);
+    control.cancelValue=seekFormatTime(snapshot.current);
+    seekPause(control);
+    editor.dataset.editing='true';
+    editor.readOnly=false;
+    editor.value=control.cancelValue;
+    editor.removeAttribute('data-invalid');
+    window.setTimeout(()=> {
+      editor.focus({preventScroll:true});
+      editor.select();
+    },0);
+  }
+
+  function seekEndEdit(control,keepValue=false) {
+    const {editor}=control;
+    editor.dataset.editing='false';
+    editor.readOnly=true;
+    editor.removeAttribute('data-invalid');
+    if(!keepValue)editor.value=control.cancelValue||editor.value;
+    try { editor.blur(); } catch(error) {}
+    seekUpdateControl(control,true);
+  }
+
+  function seekCommit(control) {
+    const seconds=seekParseTime(control.editor.value);
+    if(!Number.isFinite(seconds)||seconds<0) {
+      control.editor.dataset.invalid='true';
+      control.editor.select();
+      return;
+    }
+    if(!seekToSeconds(control,seconds))return;
+    seekEndEdit(control,true);
+    seekPlay(control);
+  }
+
+  function seekUpdateControl(control,force=false) {
+    if(!control.editor.isConnected||!control.slider.isConnected)return false;
+    const snapshot=seekSnapshot(control);
+    if(control.editor.dataset.editing!=='true') {
+      const formatted=seekFormatTime(snapshot.current);
+      if(force||control.editor.value!==formatted)control.editor.value=formatted;
+      control.editor.size=Math.max(5,Math.min(8,formatted.length));
+    }
+    seekPositionControl(control,snapshot);
+    control.lastSnapshot={current:snapshot.current,duration:snapshot.duration,ratio:snapshot.ratio};
+    return true;
+  }
+
+  function seekMakeControl(root,slider,progressRow,track) {
+    let editor=track.querySelector(':scope > .suno-editable-seek-time');
+    if(!editor) {
+      editor=document.createElement('input');
+      editor.type='text';
+      editor.inputMode='numeric';
+      editor.autocomplete='off';
+      editor.spellcheck=false;
+      editor.readOnly=true;
+      editor.className='suno-editable-seek-time';
+      editor.dataset.editing='false';
+      editor.setAttribute('aria-label','Current playback time. Click to enter a new time.');
+      editor.title='Click to enter a time such as 3:44';
+      track.appendChild(editor);
+    }
+    const control={root,slider,progressRow,track,editor,cancelValue:'0:00',lastCommitted:0};
+    editor.__sunoSeekControl=control;
+    if(!editor.dataset.sunoSeekHandlers) {
+      editor.dataset.sunoSeekHandlers='1';
+      editor.addEventListener('pointerdown',event=> {
+        event.stopPropagation();
+      });
+      editor.addEventListener('click',event=> {
+        event.preventDefault();
+        event.stopPropagation();
+        seekBeginEdit(editor.__sunoSeekControl);
+      });
+      editor.addEventListener('keydown',event=> {
+        event.stopPropagation();
+        const live=editor.__sunoSeekControl;
+        if(event.key==='Enter') {
+          event.preventDefault();
+          seekCommit(live);
+        } else if(event.key==='Escape') {
+          event.preventDefault();
+          seekEndEdit(live,false);
+        }
+      });
+      editor.addEventListener('input',()=>editor.removeAttribute('data-invalid'));
+      editor.addEventListener('blur',()=> {
+        const live=editor.__sunoSeekControl;
+        if(editor.dataset.editing==='true')seekEndEdit(live,false);
+      });
+    }
+    editableSeekState.controls.add(control);
+    seekUpdateControl(control,true);
+    return control;
+  }
+
+  function editableSeekRefresh() {
+    const live=new Set();
+    for(const root of $('[data-playbar=true]')) {
+      const slider=root.querySelector(C);
+      if(!slider)continue;
+      const progressRow=slider.closest('[data-pb=pr]')||progRow(slider,root);
+      const track=slider.closest('[data-pb=tr]')||progressRow?.querySelector('[data-pb=tr]')||slider.parentElement;
+      if(!progressRow||!track)continue;
+      A(progressRow,'pr','pb');
+      A(track,'tr','pb');
+      let editor=track.querySelector(':scope > .suno-editable-seek-time');
+      let control=editor?.__sunoSeekControl;
+      if(!control||control.slider!==slider||control.root!==root)control=seekMakeControl(root,slider,progressRow,track);
+      live.add(control);
+      seekUpdateControl(control);
+    }
+    for(const control of [...editableSeekState.controls]) {
+      if(!live.has(control)||!control.editor.isConnected)editableSeekState.controls.delete(control);
+    }
+  }
+
+  function installEditableSeekTime() {
+    const old=window[EDITABLE_SEEK_KEY]||window.__sunoEditableSeekTimeV64;
+    if(old?.timer)window.clearInterval(old.timer);
+    try { delete window.__sunoEditableSeekTimeV64; } catch(error) {}
+    editableSeekState.timer=window.setInterval(()=> {
+      for(const control of [...editableSeekState.controls]) {
+        if(!seekUpdateControl(control))editableSeekState.controls.delete(control);
+      }
+    },180);
+    window[EDITABLE_SEEK_KEY]=editableSeekState;
+  }
+
   function handle() {
     return document.querySelector('p[aria-label^="@"]')?.getAttribute("aria-label")?.replace(/^@/, "")||(location.pathname.match(/^\/@([^/?#]+)/)||[])[1]||""
   }
@@ -883,7 +1164,7 @@ function playlistLikes() {
   const CREDIT_REFRESH_MS=60000;
   const CREDIT_API_URL=`${STUDIO_API_BASE}/api/billing/info/`;
 
-  const previousCreditController=window.__sunoCreditsV64||window.__sunoCreditsV61||window.__sunoCreditsV60||window.__sunoCreditsV59||window.__sunoCreditsV58||window.__sunoCreditsV57||window.__sunoCreditsV56||window.__sunoCreditsV55;
+  const previousCreditController=window.__sunoCreditsV65||window.__sunoCreditsV61||window.__sunoCreditsV60||window.__sunoCreditsV59||window.__sunoCreditsV58||window.__sunoCreditsV57||window.__sunoCreditsV56||window.__sunoCreditsV55;
   try { previousCreditController?.stop?.(); } catch(error) {}
 
   const creditState={
@@ -1114,7 +1395,7 @@ function playlistLikes() {
   }
 
   function creditDebugState() {
-    window.__sunoCreditsV64={
+    window.__sunoCreditsV65={
       value:creditState.value,
       formatted:creditText(),
       lastUpdated:creditState.lastUpdated,
@@ -2498,7 +2779,7 @@ function playlistLikes() {
       }
       try { delete window[key]; } catch(error) {}
     }
-    if(window.__sunoWorkspaceFetchCaptureV64)return;
+    if(window.__sunoWorkspaceFetchCaptureV65)return;
     const originalFetch=window.fetch;
     if(typeof originalFetch!=='function')return;
 
@@ -2521,7 +2802,7 @@ function playlistLikes() {
     };
     wrapped.__sunoOriginalFetch=originalFetch;
     window.fetch=wrapped;
-    window.__sunoWorkspaceFetchCaptureV64={originalFetch,wrapped};
+    window.__sunoWorkspaceFetchCaptureV65={originalFetch,wrapped};
     workspaceState.fetchHookInstalled=true;
   }
 
@@ -2703,7 +2984,7 @@ function playlistLikes() {
   }
 
   function workspaceDebugState(extra={}) {
-    window.__sunoWorkspaceIndexV64={
+    window.__sunoWorkspaceIndexV65={
       workspaceId:workspaceState.id,
       workspaceIdentitySource:workspaceState.identitySource||'',
       workspaceUsesDefaultRoute:workspaceIsFallbackId(),
@@ -2743,7 +3024,7 @@ function playlistLikes() {
   const ANCESTRY_MAX_DEPTH=10;
   const ANCESTRY_MAX_ENTRIES=100;
   const ANCESTRY_POINTER_OFFSET=14;
-  const NAV_DIAGNOSTIC_KEY='__sunoAncestryNavigationDiagnosticV64';
+  const NAV_DIAGNOSTIC_KEY='__sunoAncestryNavigationDiagnosticV65';
   const navDiagnosticState={events:[],activeTarget:'',startedAt:Date.now()};
 
   function navDiagnosticRows() {
@@ -2800,7 +3081,7 @@ function playlistLikes() {
         version:62,
         url:location.href,
         exportedAt:new Date().toISOString(),
-        workspace:window.__sunoWorkspaceIndexV64||null,
+        workspace:window.__sunoWorkspaceIndexV65||null,
         events:navDiagnosticState.events
       },null,2)
     };
@@ -3319,7 +3600,7 @@ function playlistLikes() {
     return row;
   }
 
-  const SELECTED_SONG_HANDLER_KEY='__sunoSelectedSongTintV64';
+  const SELECTED_SONG_HANDLER_KEY='__sunoSelectedSongTintV65';
   let selectedSongId='';
 
   function workspaceRowSongId(row) {
@@ -3531,8 +3812,8 @@ function playlistLikes() {
       overlay?.remove();
       overlay=null;
       activeRow=null;
-      window.__sunoAncestryOverlayV64={
-        ...(window.__sunoAncestryOverlayV64||{}),open:false,lastClose:Date.now()
+      window.__sunoAncestryOverlayV65={
+        ...(window.__sunoAncestryOverlayV65||{}),open:false,lastClose:Date.now()
       };
     };
     const scheduleClose=()=> {
@@ -3639,8 +3920,8 @@ function playlistLikes() {
         panel.style.setProperty('left',`${Math.round(Math.max(ANCESTRY_VIEWPORT_EDGE,Math.min(left,window.innerWidth-rect.width-ANCESTRY_VIEWPORT_EDGE)))}px`,'important');
 
         lnDrawAncestryDuplicateArrows(panel);
-        const state=window.__sunoAncestryOverlayV64||{};
-        window.__sunoAncestryOverlayV64={
+        const state=window.__sunoAncestryOverlayV65||{};
+        window.__sunoAncestryOverlayV65={
           ...state,
           adaptiveScale:fit.scale,
           adaptiveScrolling:fit.scrolling,
@@ -3785,9 +4066,9 @@ function playlistLikes() {
       position(row,overlay);
       requestAnimationFrame(()=> {
         const arrowLayout=lnDrawAncestryDuplicateArrows(overlay);
-        window.__sunoAncestryOverlayV64={...(window.__sunoAncestryOverlayV64||{}),arrowLayout};
+        window.__sunoAncestryOverlayV65={...(window.__sunoAncestryOverlayV65||{}),arrowLayout};
       });
-      window.__sunoAncestryOverlayV64={
+      window.__sunoAncestryOverlayV65={
         open:true,songId:id,entries:tree.entries.length,uniqueSongs:tree.uniqueSongs||0,
         duplicateReferences:tree.duplicateReferences||0,truncated:tree.truncated,
         workspaceSongs:workspaceOrder().length,knownSourceLists:lnSources.size,lastOpen:Date.now()
@@ -4235,6 +4516,7 @@ function run() {
     clearPlayDiscs();
     clearOverlayDiscs();
     playbar();
+    editableSeekRefresh();
     exactNumbers();
     creditRender();
     aboutInBanner();
@@ -4251,6 +4533,7 @@ let raf=0, sched=()=>raf||(raf=requestAnimationFrame(()=> {
   installSongTitleExpansion();
   installAncestryOverlay();
   installSelectedSongTint();
+  installEditableSeekTime();
   creditInitialize();
   run();
   window[OBS]=new MutationObserver(sched);
@@ -4262,4 +4545,4 @@ let raf=0, sched=()=>raf||(raf=requestAnimationFrame(()=> {
   })
 })();
 
-//# sourceURL=suno-tweaks-v64-merged-duplicate-arrow-junctions.js
+//# sourceURL=suno-tweaks-v65-editable-player-time.js
