@@ -1,5 +1,5 @@
 /**
- * Suno Tweaks v56 — readable local script
+ * Suno Tweaks v57 — readable local script
  *
  * Loaded by the persistent local-file bookmarklet. The script keeps the accepted
  * layout, playlist, title-edit and title-expansion behaviour while adding a compact
@@ -17,10 +17,10 @@
  *
  * Debug objects:
  * - window.__sunoLocalScriptLoader     — loader status
- * - window.__sunoWorkspaceIndexV56     — workspace indexing status
- * - window.__sunoAncestryOverlayV56    — ancestry overlay status
- * - window.__sunoAncestryNavigationDiagnosticV56 — navigation event log
- * - window.__sunoCreditsV56        — exact credit balance and refresh status
+ * - window.__sunoWorkspaceIndexV57     — workspace indexing status
+ * - window.__sunoAncestryOverlayV57    — ancestry overlay status
+ * - window.__sunoAncestryNavigationDiagnosticV57 — navigation event log
+ * - window.__sunoCreditsV57        — exact credit balance and refresh status
  */
 
 (()=> {
@@ -872,11 +872,11 @@ function playlistLikes() {
   const WORKSPACE_BATCH_SIZE=35;
 
   const CREDIT_WIDGET_ID='suno-exact-credit-sidebar-entry';
-  const CREDIT_CACHE_KEY='__suno_exact_credit_balance_v56';
+  const CREDIT_CACHE_KEY='__suno_exact_credit_balance_v57';
   const CREDIT_REFRESH_MS=60000;
   const CREDIT_API_URL=`${STUDIO_API_BASE}/api/billing/info/`;
 
-  const previousCreditController=window.__sunoCreditsV56||window.__sunoCreditsV55;
+  const previousCreditController=window.__sunoCreditsV57||window.__sunoCreditsV56||window.__sunoCreditsV55;
   try { previousCreditController?.stop?.(); } catch(error) {}
 
   const creditState={
@@ -1107,7 +1107,7 @@ function playlistLikes() {
   }
 
   function creditDebugState() {
-    window.__sunoCreditsV56={
+    window.__sunoCreditsV57={
       value:creditState.value,
       formatted:creditText(),
       lastUpdated:creditState.lastUpdated,
@@ -1191,7 +1191,7 @@ function playlistLikes() {
       cover:100, remix:98, sample:96, chop_sample:95, underpainting:94,
       overpainting:94, stem_from:93, stemmed:93, stitch:92, concat:92,
       extend:90, continue:90, section:88, infill:88, speed:86,
-      remaster:84, upsample:84, edit:80, edited:78, source:76,
+      remaster:84, upsample:84, old_editor:82, edit:80, edited:78, source:76,
       reference:74, input:72, history:60, derived:40, root:10
     };
     return priorities[String(kind||'').toLowerCase()]||50;
@@ -1989,9 +1989,56 @@ function playlistLikes() {
     return true;
   }
 
+
+  function lnAttributionKind(relationship) {
+    const normalized=String(relationship||'').trim().toLowerCase().replace(/[^a-z0-9]+/g,'_');
+    if(!normalized)return 'source';
+    if(/^rev\d*$/.test(normalized)||normalized.includes('edit'))return 'old_editor';
+    if(normalized.includes('extend')||normalized.includes('continue'))return 'extend';
+    if(normalized.includes('concat')||normalized.includes('stitch')||normalized.includes('join'))return 'stitch';
+    if(normalized.includes('cover'))return 'cover';
+    if(normalized.includes('remix'))return 'remix';
+    if(normalized.includes('sample'))return 'sample';
+    if(normalized.includes('stem'))return 'stem_from';
+    if(normalized.includes('speed'))return 'speed';
+    if(normalized.includes('remaster')||normalized.includes('upsample'))return 'remaster';
+    return normalized;
+  }
+
+  function workspaceAttributionChildId(context) {
+    const match=String(context||'').match(/\/api\/clips\/([0-9a-f-]{36})\/attribution(?:[/?#]|$)/i);
+    return lnNorm(match?.[1]);
+  }
+
+  function workspaceIndexAttributionPayload(childId, payload) {
+    childId=lnNorm(childId);
+    if(!childId||!payload||typeof payload!=='object')return false;
+
+    const sourceClips=Array.isArray(payload.source_clips)?payload.source_clips:
+      Array.isArray(payload.sources)?payload.sources:[];
+    let changed=false;
+
+    for(const source of sourceClips) {
+      if(!source||typeof source!=='object')continue;
+      const sourceId=lnNorm(source.clip_id||source.id||source.uuid);
+      if(!sourceId)continue;
+      lnRememberObject({
+        ...source,
+        id:sourceId,
+        title:source.title||source.name||'',
+        image_url:source.image_url||source.image||'',
+        audio_url:source.audio_url||source.audio||''
+      });
+      changed=lnAddSource(childId,sourceId,lnAttributionKind(source.relationship))||changed;
+    }
+    return changed;
+  }
+
   function workspaceIndexPayload(value, options={}) {
     const source=options.source||'network';
     const allowOrder=options.allowOrder!==false;
+    const attributionChildId=workspaceAttributionChildId(options.context);
+    if(attributionChildId)workspaceIndexAttributionPayload(attributionChildId,value);
     const seen=new WeakSet();
     const budget={n:0,max:options.max||80000};
 
@@ -2365,7 +2412,19 @@ function playlistLikes() {
     workspaceState.fetchedUrls.add(key);
 
     return workspaceQueueTask(key, async()=> {
-      const response=await fetch(normalized,{credentials:'include',cache:'default'});
+      const headers={accept:'application/json'};
+      if(options.authenticated) {
+        const token=await creditGetClerkToken();
+        if(token)headers.authorization=`Bearer ${token}`;
+      }
+      let response=await fetch(normalized,{credentials:'include',cache:'default',headers});
+      if(response.status===401&&options.authenticated&&!headers.authorization) {
+        const retryToken=await creditGetClerkToken();
+        if(retryToken)response=await fetch(normalized,{
+          credentials:'include',cache:'default',
+          headers:{accept:'application/json',authorization:`Bearer ${retryToken}`}
+        });
+      }
       if(generation!==workspaceState.indexGeneration)return null;
       if(!response.ok)throw new Error(`Workspace request failed: ${response.status}`);
       const contentType=response.headers.get('content-type')||'';
@@ -2386,14 +2445,14 @@ function playlistLikes() {
   }
 
   function workspaceInstallFetchCapture() {
-    for(const key of ['__sunoWorkspaceFetchCaptureV43','__sunoWorkspaceFetchCaptureV44','__sunoWorkspaceFetchCaptureV46','__sunoWorkspaceFetchCaptureV47','__sunoWorkspaceFetchCaptureV49','__sunoWorkspaceFetchCaptureV50','__sunoWorkspaceFetchCaptureV51','__sunoWorkspaceFetchCaptureV52','__sunoWorkspaceFetchCaptureV53','__sunoWorkspaceFetchCaptureV54','__sunoWorkspaceFetchCaptureV55']) {
+    for(const key of ['__sunoWorkspaceFetchCaptureV43','__sunoWorkspaceFetchCaptureV44','__sunoWorkspaceFetchCaptureV46','__sunoWorkspaceFetchCaptureV47','__sunoWorkspaceFetchCaptureV49','__sunoWorkspaceFetchCaptureV50','__sunoWorkspaceFetchCaptureV51','__sunoWorkspaceFetchCaptureV52','__sunoWorkspaceFetchCaptureV53','__sunoWorkspaceFetchCaptureV54','__sunoWorkspaceFetchCaptureV55','__sunoWorkspaceFetchCaptureV56']) {
       const oldHook=window[key];
       if(oldHook?.wrapped&&window.fetch===oldHook.wrapped&&typeof oldHook.originalFetch==='function') {
         window.fetch=oldHook.originalFetch;
       }
       try { delete window[key]; } catch(error) {}
     }
-    if(window.__sunoWorkspaceFetchCaptureV56)return;
+    if(window.__sunoWorkspaceFetchCaptureV57)return;
     const originalFetch=window.fetch;
     if(typeof originalFetch!=='function')return;
 
@@ -2416,7 +2475,7 @@ function playlistLikes() {
     };
     wrapped.__sunoOriginalFetch=originalFetch;
     window.fetch=wrapped;
-    window.__sunoWorkspaceFetchCaptureV56={originalFetch,wrapped};
+    window.__sunoWorkspaceFetchCaptureV57={originalFetch,wrapped};
     workspaceState.fetchHookInstalled=true;
   }
 
@@ -2491,9 +2550,10 @@ function playlistLikes() {
     id=lnNorm(id);
     if(!id)return;
     try {
-      await workspaceFetchJson(`${STUDIO_API_BASE}/api/clips/${id}/attribution`,{
-        allowOrder:false,followPages:false,max:30000
+      const payload=await workspaceFetchJson(`${STUDIO_API_BASE}/api/clips/${id}/attribution`,{
+        allowOrder:false,followPages:false,max:30000,authenticated:true
       });
+      if(payload)workspaceIndexAttributionPayload(id,payload);
     } catch(error) {}
   }
 
@@ -2588,7 +2648,7 @@ function playlistLikes() {
   }
 
   function workspaceDebugState(extra={}) {
-    window.__sunoWorkspaceIndexV56={
+    window.__sunoWorkspaceIndexV57={
       workspaceId:workspaceState.id,
       workspaceIdentitySource:workspaceState.identitySource||'',
       workspaceUsesDefaultRoute:workspaceIsFallbackId(),
@@ -2628,7 +2688,7 @@ function playlistLikes() {
   const ANCESTRY_MAX_DEPTH=10;
   const ANCESTRY_MAX_ENTRIES=100;
   const ANCESTRY_POINTER_OFFSET=14;
-  const NAV_DIAGNOSTIC_KEY='__sunoAncestryNavigationDiagnosticV56';
+  const NAV_DIAGNOSTIC_KEY='__sunoAncestryNavigationDiagnosticV57';
   const navDiagnosticState={events:[],activeTarget:'',startedAt:Date.now()};
 
   function navDiagnosticRows() {
@@ -2677,15 +2737,15 @@ function playlistLikes() {
 
   function installNavigationDiagnosticApi() {
     window[NAV_DIAGNOSTIC_KEY]={
-      version:52,
+      version:57,
       events:navDiagnosticState.events,
       snapshot:(label='manual')=>navDiagnosticRecord(label,navDiagnosticState.activeTarget),
       clear:()=>{navDiagnosticState.events.length=0;navDiagnosticState.startedAt=Date.now();},
       export:()=>JSON.stringify({
-        version:52,
+        version:57,
         url:location.href,
         exportedAt:new Date().toISOString(),
-        workspace:window.__sunoWorkspaceIndexV56||null,
+        workspace:window.__sunoWorkspaceIndexV57||null,
         events:navDiagnosticState.events
       },null,2)
     };
@@ -2739,7 +2799,7 @@ function playlistLikes() {
       section:'Section edit',infill:'Section edit',stitch:'Stitched from',concat:'Stitched from',
       underpainting:'Underpainting',overpainting:'Overpainting',stem_from:'Stem source',
       stemmed:'Stem source',speed:'Speed edit',remaster:'Remaster',upsample:'Remaster',
-      edit:'Edited from',edited:'Edited from',history:'History',input:'Input',root:'Root',
+      old_editor:'Old editor source',edit:'Edited from',edited:'Edited from',history:'History',input:'Input',root:'Root',
       derived:'Derived from'
     };
     const key=String(kind||'derived').toLowerCase();
@@ -3004,7 +3064,7 @@ function playlistLikes() {
     return row;
   }
 
-  const SELECTED_SONG_HANDLER_KEY='__sunoSelectedSongTintV56';
+  const SELECTED_SONG_HANDLER_KEY='__sunoSelectedSongTintV57';
   let selectedSongId='';
 
   function workspaceRowSongId(row) {
@@ -3029,8 +3089,9 @@ function playlistLikes() {
   }
 
   function installSelectedSongTint() {
-    const old=window[SELECTED_SONG_HANDLER_KEY]||window.__sunoSelectedSongTintV55;
+    const old=window[SELECTED_SONG_HANDLER_KEY]||window.__sunoSelectedSongTintV56||window.__sunoSelectedSongTintV55;
     if(old?.onClick)document.removeEventListener('click',old.onClick,true);
+    try { delete window.__sunoSelectedSongTintV56; } catch(error) {}
     try { delete window.__sunoSelectedSongTintV55; } catch(error) {}
 
     const onClick=event=> {
@@ -3210,8 +3271,8 @@ function playlistLikes() {
       overlay?.remove();
       overlay=null;
       activeRow=null;
-      window.__sunoAncestryOverlayV56={
-        ...(window.__sunoAncestryOverlayV56||{}),open:false,lastClose:Date.now()
+      window.__sunoAncestryOverlayV57={
+        ...(window.__sunoAncestryOverlayV57||{}),open:false,lastClose:Date.now()
       };
     };
     const scheduleClose=()=> {
@@ -3349,7 +3410,7 @@ function playlistLikes() {
         list.appendChild(more);
       }
       position(row,overlay);
-      window.__sunoAncestryOverlayV56={
+      window.__sunoAncestryOverlayV57={
         open:true,songId:id,entries:tree.entries.length,truncated:tree.truncated,
         workspaceSongs:workspaceOrder().length,knownSourceLists:lnSources.size,lastOpen:Date.now()
       };
@@ -3823,4 +3884,4 @@ let raf=0, sched=()=>raf||(raf=requestAnimationFrame(()=> {
   })
 })();
 
-//# sourceURL=suno-tweaks-v56-exact-sidebar-credits.js
+//# sourceURL=suno-tweaks-v57-exact-sidebar-credits.js
