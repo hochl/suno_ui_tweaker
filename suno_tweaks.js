@@ -1,5 +1,5 @@
 /**
- * Suno Tweaks v53 — readable local script
+ * Suno Tweaks v54 — readable local script
  *
  * Loaded by the persistent local-file bookmarklet. The script keeps the accepted
  * layout, playlist, title-edit and title-expansion behaviour while adding a compact
@@ -17,9 +17,9 @@
  *
  * Debug objects:
  * - window.__sunoLocalScriptLoader     — loader status
- * - window.__sunoWorkspaceIndexV53     — workspace indexing status
- * - window.__sunoAncestryOverlayV53    — ancestry overlay status
- * - window.__sunoAncestryNavigationDiagnosticV53 — navigation event log
+ * - window.__sunoWorkspaceIndexV54     — workspace indexing status
+ * - window.__sunoAncestryOverlayV54    — ancestry overlay status
+ * - window.__sunoAncestryNavigationDiagnosticV54 — navigation event log
  */
 
 (()=> {
@@ -93,7 +93,8 @@ li>[role="button"][aria-roledescription="sortable"] .clip-row .clip-image-contai
 [data-suno-pl-like="1"]{display:inline-flex!important;align-items:center!important;white-space:nowrap!important}
 [data-testid="clip-row"] button[aria-label="Edit title"]{display:inline-flex!important;opacity:1!important;visibility:visible!important;pointer-events:auto!important;transform:none!important;position:relative!important;inset:auto!important;width:1.5rem!important;min-width:1.5rem!important;max-width:none!important;height:1.5rem!important;flex:0 0 1.5rem!important;margin-left:.25rem!important;clip-path:none!important}
 [data-testid="clip-row"] div:has(>button[aria-label="Edit title"]){display:flex!important;align-items:center!important;overflow:visible!important;visibility:visible!important;opacity:1!important}
-#suno-create-ancestry-overlay{position:fixed!important;z-index:2147483646!important;box-sizing:border-box!important;overflow:auto!important;overscroll-behavior:contain!important;max-height:min(56vh,520px)!important;padding:6px!important;border:1px solid rgba(255,255,255,.13)!important;border-radius:10px!important;background:rgba(13,13,15,.97)!important;color:#f5f5f6!important;box-shadow:0 12px 34px rgba(0,0,0,.48)!important;backdrop-filter:blur(10px)!important;-webkit-backdrop-filter:blur(10px)!important}
+[data-testid="clip-row"].suno-current-selected-song{background:rgba(88,190,112,.085)!important;border-radius:8px!important;transition:background-color .14s ease!important}
+#suno-create-ancestry-overlay{position:fixed!important;z-index:2147483646!important;box-sizing:border-box!important;overflow:auto!important;overscroll-behavior:contain!important;max-height:min(56vh,520px)!important;padding:6px!important;border:1px solid rgba(255,255,255,.13)!important;border-radius:10px!important;background:linear-gradient(rgba(255,225,92,.075),rgba(255,225,92,.075)),rgba(13,13,15,.97)!important;color:#f5f5f6!important;box-shadow:0 12px 34px rgba(0,0,0,.48)!important;backdrop-filter:blur(10px)!important;-webkit-backdrop-filter:blur(10px)!important}
 #suno-create-ancestry-overlay .suno-ancestry-header{display:flex!important;align-items:center!important;justify-content:space-between!important;gap:10px!important;padding:3px 7px 6px!important;font:600 11px/1.2 system-ui,sans-serif!important;color:rgba(255,255,255,.72)!important;text-transform:uppercase!important;letter-spacing:.045em!important}
 #suno-create-ancestry-overlay .suno-ancestry-list{display:flex!important;flex-direction:column!important;gap:2px!important}
 #suno-create-ancestry-overlay .suno-ancestry-entry{--suno-ancestry-depth:1;display:grid!important;grid-template-columns:34px minmax(0,1fr) auto!important;align-items:center!important;column-gap:7px!important;width:100%!important;min-height:42px!important;box-sizing:border-box!important;margin:0!important;padding:3px 7px 3px calc(7px + (var(--suno-ancestry-depth) - 1)*14px)!important;border:0!important;border-radius:7px!important;background:transparent!important;color:inherit!important;text-align:left!important;font-family:system-ui,sans-serif!important;cursor:default!important}
@@ -2319,7 +2320,7 @@ function playlistLikes() {
   }
 
   function workspaceDebugState(extra={}) {
-    window.__sunoWorkspaceIndexV53={
+    window.__sunoWorkspaceIndexV54={
       workspaceId:workspaceState.id,
       workspaceIdentitySource:workspaceState.identitySource||'',
       workspaceUsesDefaultRoute:workspaceIsFallbackId(),
@@ -2359,7 +2360,7 @@ function playlistLikes() {
   const ANCESTRY_MAX_DEPTH=10;
   const ANCESTRY_MAX_ENTRIES=100;
   const ANCESTRY_POINTER_OFFSET=14;
-  const NAV_DIAGNOSTIC_KEY='__sunoAncestryNavigationDiagnosticV53';
+  const NAV_DIAGNOSTIC_KEY='__sunoAncestryNavigationDiagnosticV54';
   const navDiagnosticState={events:[],activeTarget:'',startedAt:Date.now()};
 
   function navDiagnosticRows() {
@@ -2416,7 +2417,7 @@ function playlistLikes() {
         version:52,
         url:location.href,
         exportedAt:new Date().toISOString(),
-        workspace:window.__sunoWorkspaceIndexV53||null,
+        workspace:window.__sunoWorkspaceIndexV54||null,
         events:navDiagnosticState.events
       },null,2)
     };
@@ -2735,6 +2736,57 @@ function playlistLikes() {
     return row;
   }
 
+  const SELECTED_SONG_HANDLER_KEY='__sunoSelectedSongTintV54';
+  let selectedSongId='';
+
+  function workspaceRowSongId(row) {
+    if(!row)return '';
+    const titleLink=[...row.querySelectorAll('a[href^="/song/"]')].find(anchor=>
+      Boolean(anchor.closest('[class*="clip-title-wrapper"]'))&&lnLinkId(anchor)
+    );
+    return lnLinkId(titleLink);
+  }
+
+  function workspaceApplySelectedSongTint() {
+    for(const row of $('[data-testid="clip-row"]')) {
+      row.classList.toggle('suno-current-selected-song',Boolean(selectedSongId)&&workspaceRowSongId(row)===selectedSongId);
+    }
+  }
+
+  function workspaceMarkSelectedSong(id) {
+    id=lnNorm(id);
+    if(!id)return;
+    selectedSongId=id;
+    workspaceApplySelectedSongTint();
+  }
+
+  function installSelectedSongTint() {
+    const old=window[SELECTED_SONG_HANDLER_KEY];
+    if(old?.onClick)document.removeEventListener('click',old.onClick,true);
+
+    const onClick=event=> {
+      const row=event.target.closest?.('[data-testid="clip-row"]');
+      if(!row)return;
+
+      // Ignore controls that do not select the song. Play/Pause and the title area
+      // do select it, while edit/like/remix/menu actions should leave the tint alone.
+      const control=event.target.closest?.('button,a,[role="button"],input,select,textarea');
+      if(control) {
+        const label=String(control.getAttribute?.('aria-label')||'');
+        const isPlayback=/^(play|pause|playing)(\s|$)/i.test(label);
+        const isTitle=control.matches?.('a[href^="/song/"]')&&Boolean(control.closest('[class*="clip-title-wrapper"]'));
+        if(!isPlayback&&!isTitle)return;
+      }
+
+      const id=workspaceRowSongId(row);
+      if(id)window.setTimeout(()=>workspaceMarkSelectedSong(id),0);
+    };
+
+    document.addEventListener('click',onClick,true);
+    window[SELECTED_SONG_HANDLER_KEY]={onClick};
+    workspaceApplySelectedSongTint();
+  }
+
   function workspaceSelectRow(row,id) {
     id=lnNorm(id);
     if(!row||!id)return false;
@@ -2751,6 +2803,7 @@ function playlistLikes() {
         bubbles:true,cancelable:true,view:window,button:0,buttons:0
       }));
       row.dataset.sunoAncestrySelected=String(Date.now());
+      workspaceMarkSelectedSong(id);
       window.setTimeout(()=>delete row.dataset.sunoAncestrySelected,1200);
       return true;
     } catch(error) {
@@ -2888,8 +2941,8 @@ function playlistLikes() {
       overlay?.remove();
       overlay=null;
       activeRow=null;
-      window.__sunoAncestryOverlayV53={
-        ...(window.__sunoAncestryOverlayV53||{}),open:false,lastClose:Date.now()
+      window.__sunoAncestryOverlayV54={
+        ...(window.__sunoAncestryOverlayV54||{}),open:false,lastClose:Date.now()
       };
     };
     const scheduleClose=()=> {
@@ -3027,7 +3080,7 @@ function playlistLikes() {
         list.appendChild(more);
       }
       position(row,overlay);
-      window.__sunoAncestryOverlayV53={
+      window.__sunoAncestryOverlayV54={
         open:true,songId:id,entries:tree.entries.length,truncated:tree.truncated,
         workspaceSongs:workspaceOrder().length,knownSourceLists:lnSources.size,lastOpen:Date.now()
       };
@@ -3463,6 +3516,7 @@ function run() {
     playlistLikes();
     createTitleEdit();
     workspaceRefresh();
+    workspaceApplySelectedSongTint();
     layoutCards();
     prepareSongTitleExpansion();
     let nr=layoutNewRows(), ch=applyPins();
@@ -3487,6 +3541,7 @@ let raf=0, sched=()=>raf||(raf=requestAnimationFrame(()=> {
   }));
   installSongTitleExpansion();
   installAncestryOverlay();
+  installSelectedSongTint();
   run();
   window[OBS]=new MutationObserver(sched);
   window[OBS].observe(document.body, {
@@ -3497,4 +3552,4 @@ let raf=0, sched=()=>raf||(raf=requestAnimationFrame(()=> {
   })
 })();
 
-//# sourceURL=suno-tweaks-v53-default-workspace-detection.js
+//# sourceURL=suno-tweaks-v54-selected-green-popup-yellow.js
