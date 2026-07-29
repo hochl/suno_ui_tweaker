@@ -1,5 +1,5 @@
 /**
- * Suno Tweaks v58 — readable local script
+ * Suno Tweaks v59 — readable local script
  *
  * Loaded by the persistent local-file bookmarklet. The script keeps the accepted
  * layout, playlist, title-edit and title-expansion behaviour while adding a compact
@@ -14,13 +14,14 @@
  * - Known source relations and song metadata are cached in sessionStorage.
  * - Workspace navigation uses measured rows, validated clip sequences and created-at chronology.
  * - Browser scroll anchoring is disabled only during a controlled ancestry jump.
+ * - The ancestry popup expands to the viewport, then scales to 66%, then scrolls.
  *
  * Debug objects:
  * - window.__sunoLocalScriptLoader     — loader status
- * - window.__sunoWorkspaceIndexV58     — workspace indexing status
- * - window.__sunoAncestryOverlayV58    — ancestry overlay status
- * - window.__sunoAncestryNavigationDiagnosticV58 — navigation event log
- * - window.__sunoCreditsV58        — exact credit balance and refresh status
+ * - window.__sunoWorkspaceIndexV59     — workspace indexing status
+ * - window.__sunoAncestryOverlayV59    — ancestry overlay status
+ * - window.__sunoAncestryNavigationDiagnosticV59 — navigation event log
+ * - window.__sunoCreditsV59        — exact credit balance and refresh status
  */
 
 (()=> {
@@ -95,25 +96,25 @@ li>[role="button"][aria-roledescription="sortable"] .clip-row .clip-image-contai
 [data-testid="clip-row"] button[aria-label="Edit title"]{display:inline-flex!important;opacity:1!important;visibility:visible!important;pointer-events:auto!important;transform:none!important;position:relative!important;inset:auto!important;width:1.5rem!important;min-width:1.5rem!important;max-width:none!important;height:1.5rem!important;flex:0 0 1.5rem!important;margin-left:.25rem!important;clip-path:none!important}
 [data-testid="clip-row"] div:has(>button[aria-label="Edit title"]){display:flex!important;align-items:center!important;overflow:visible!important;visibility:visible!important;opacity:1!important}
 [data-testid="clip-row"].suno-current-selected-song{background:rgba(88,190,112,.085)!important;border-radius:8px!important;transition:background-color .14s ease!important}
-#suno-create-ancestry-overlay{position:fixed!important;z-index:2147483646!important;box-sizing:border-box!important;overflow:auto!important;overscroll-behavior:contain!important;max-height:min(56vh,520px)!important;padding:6px!important;border:1px solid rgba(255,255,255,.13)!important;border-radius:10px!important;background:linear-gradient(rgba(255,225,92,.075),rgba(255,225,92,.075)),rgba(13,13,15,.97)!important;color:#f5f5f6!important;box-shadow:0 12px 34px rgba(0,0,0,.48)!important;backdrop-filter:blur(10px)!important;-webkit-backdrop-filter:blur(10px)!important}
-#suno-create-ancestry-overlay .suno-ancestry-header{display:flex!important;align-items:center!important;justify-content:space-between!important;gap:10px!important;padding:3px 7px 6px!important;font:600 11px/1.2 system-ui,sans-serif!important;color:rgba(255,255,255,.72)!important;text-transform:uppercase!important;letter-spacing:.045em!important}
-#suno-create-ancestry-overlay .suno-ancestry-list{display:flex!important;flex-direction:column!important;gap:2px!important}
-#suno-create-ancestry-overlay .suno-ancestry-entry{--suno-ancestry-depth:1;display:grid!important;grid-template-columns:34px minmax(0,1fr) auto!important;align-items:center!important;column-gap:7px!important;width:100%!important;min-height:42px!important;box-sizing:border-box!important;margin:0!important;padding:3px 7px 3px calc(7px + (var(--suno-ancestry-depth) - 1)*14px)!important;border:0!important;border-radius:7px!important;background:transparent!important;color:inherit!important;text-align:left!important;font-family:system-ui,sans-serif!important;cursor:default!important}
+#suno-create-ancestry-overlay{--suno-ancestry-scale:1;position:fixed!important;z-index:2147483646!important;box-sizing:border-box!important;overflow-x:hidden!important;overflow-y:hidden!important;overscroll-behavior:contain!important;max-height:none!important;padding:calc(6px * var(--suno-ancestry-scale))!important;border:1px solid rgba(255,255,255,.13)!important;border-radius:10px!important;background:linear-gradient(rgba(255,225,92,.075),rgba(255,225,92,.075)),rgba(13,13,15,.97)!important;color:#f5f5f6!important;box-shadow:0 12px 34px rgba(0,0,0,.48)!important;backdrop-filter:blur(10px)!important;-webkit-backdrop-filter:blur(10px)!important;scrollbar-gutter:auto!important}
+#suno-create-ancestry-overlay .suno-ancestry-header{display:flex!important;align-items:center!important;justify-content:space-between!important;gap:10px!important;padding:calc(3px * var(--suno-ancestry-scale)) 7px calc(6px * var(--suno-ancestry-scale))!important;font-family:system-ui,sans-serif!important;font-size:calc(11px * var(--suno-ancestry-scale))!important;font-weight:600!important;line-height:1.2!important;color:rgba(255,255,255,.72)!important;text-transform:uppercase!important;letter-spacing:.045em!important}
+#suno-create-ancestry-overlay .suno-ancestry-list{display:flex!important;flex-direction:column!important;gap:calc(2px * var(--suno-ancestry-scale))!important}
+#suno-create-ancestry-overlay .suno-ancestry-entry{--suno-ancestry-depth:1;display:grid!important;grid-template-columns:calc(34px * var(--suno-ancestry-scale)) minmax(0,1fr) auto!important;align-items:center!important;column-gap:calc(7px * var(--suno-ancestry-scale))!important;width:100%!important;min-height:calc(42px * var(--suno-ancestry-scale))!important;box-sizing:border-box!important;margin:0!important;padding:calc(3px * var(--suno-ancestry-scale)) 7px calc(3px * var(--suno-ancestry-scale)) calc(7px + (var(--suno-ancestry-depth) - 1)*14px)!important;border:0!important;border-radius:7px!important;background:transparent!important;color:inherit!important;text-align:left!important;font-family:system-ui,sans-serif!important;cursor:default!important}
 #suno-create-ancestry-overlay .suno-ancestry-entry[data-available="true"]{cursor:pointer!important}
 #suno-create-ancestry-overlay .suno-ancestry-entry[data-available="true"]:hover,#suno-create-ancestry-overlay .suno-ancestry-entry[data-available="true"]:focus-visible{background:rgba(255,255,255,.10)!important;outline:none!important}
 #suno-create-ancestry-overlay .suno-ancestry-entry[data-available="false"]{opacity:.56!important}
 #suno-create-ancestry-overlay .suno-ancestry-entry[data-workspace-state="unknown"]{opacity:.82!important}
-#suno-create-ancestry-overlay .suno-ancestry-art{display:block!important;width:34px!important;height:34px!important;border-radius:5px!important;object-fit:cover!important;background:rgba(255,255,255,.08)!important}
-#suno-create-ancestry-overlay .suno-ancestry-art-placeholder{display:flex!important;align-items:center!important;justify-content:center!important;width:34px!important;height:34px!important;border-radius:5px!important;background:rgba(255,255,255,.08)!important;color:rgba(255,255,255,.38)!important;font-size:15px!important}
-#suno-create-ancestry-overlay .suno-ancestry-copy{display:flex!important;min-width:0!important;flex-direction:column!important;gap:1px!important}
-#suno-create-ancestry-overlay .suno-ancestry-title{min-width:0!important;overflow:hidden!important;text-overflow:ellipsis!important;white-space:nowrap!important;font-size:12.5px!important;font-weight:600!important;line-height:1.18!important;color:rgba(255,255,255,.94)!important}
-#suno-create-ancestry-overlay .suno-ancestry-id{overflow:hidden!important;text-overflow:ellipsis!important;white-space:nowrap!important;font-size:9.5px!important;line-height:1.1!important;color:rgba(255,255,255,.42)!important}
-#suno-create-ancestry-overlay .suno-ancestry-kind-block{align-self:center!important;display:flex!important;max-width:104px!important;min-width:0!important;flex-direction:column!important;align-items:flex-end!important;gap:2px!important}
-#suno-create-ancestry-overlay .suno-ancestry-kind{display:block!important;max-width:104px!important;overflow:hidden!important;text-overflow:ellipsis!important;white-space:nowrap!important;padding:2px 5px!important;border-radius:999px!important;background:rgba(255,255,255,.07)!important;font-size:9px!important;line-height:1.1!important;color:rgba(255,255,255,.60)!important;text-transform:uppercase!important;letter-spacing:.035em!important}
-#suno-create-ancestry-overlay .suno-ancestry-time{display:block!important;padding-right:4px!important;white-space:nowrap!important;font:500 8.5px/1.05 system-ui,sans-serif!important;color:rgba(255,255,255,.43)!important;font-variant-numeric:tabular-nums!important;text-transform:none!important;letter-spacing:0!important}
+#suno-create-ancestry-overlay .suno-ancestry-art{display:block!important;width:calc(34px * var(--suno-ancestry-scale))!important;height:calc(34px * var(--suno-ancestry-scale))!important;border-radius:calc(5px * var(--suno-ancestry-scale))!important;object-fit:cover!important;background:rgba(255,255,255,.08)!important}
+#suno-create-ancestry-overlay .suno-ancestry-art-placeholder{display:flex!important;align-items:center!important;justify-content:center!important;width:calc(34px * var(--suno-ancestry-scale))!important;height:calc(34px * var(--suno-ancestry-scale))!important;border-radius:calc(5px * var(--suno-ancestry-scale))!important;background:rgba(255,255,255,.08)!important;color:rgba(255,255,255,.38)!important;font-size:calc(15px * var(--suno-ancestry-scale))!important}
+#suno-create-ancestry-overlay .suno-ancestry-copy{display:flex!important;min-width:0!important;flex-direction:column!important;gap:calc(1px * var(--suno-ancestry-scale))!important}
+#suno-create-ancestry-overlay .suno-ancestry-title{min-width:0!important;overflow:hidden!important;text-overflow:ellipsis!important;white-space:nowrap!important;font-size:calc(12.5px * var(--suno-ancestry-scale))!important;font-weight:600!important;line-height:1.18!important;color:rgba(255,255,255,.94)!important}
+#suno-create-ancestry-overlay .suno-ancestry-id{overflow:hidden!important;text-overflow:ellipsis!important;white-space:nowrap!important;font-size:calc(9.5px * var(--suno-ancestry-scale))!important;line-height:1.1!important;color:rgba(255,255,255,.42)!important}
+#suno-create-ancestry-overlay .suno-ancestry-kind-block{align-self:center!important;display:flex!important;max-width:104px!important;min-width:0!important;flex-direction:column!important;align-items:flex-end!important;gap:calc(2px * var(--suno-ancestry-scale))!important}
+#suno-create-ancestry-overlay .suno-ancestry-kind{display:block!important;max-width:104px!important;overflow:hidden!important;text-overflow:ellipsis!important;white-space:nowrap!important;padding:calc(2px * var(--suno-ancestry-scale)) 5px!important;border-radius:999px!important;background:rgba(255,255,255,.07)!important;font-size:calc(9px * var(--suno-ancestry-scale))!important;line-height:1.1!important;color:rgba(255,255,255,.60)!important;text-transform:uppercase!important;letter-spacing:.035em!important}
+#suno-create-ancestry-overlay .suno-ancestry-time{display:block!important;padding-right:4px!important;white-space:nowrap!important;font-family:system-ui,sans-serif!important;font-size:calc(8.5px * var(--suno-ancestry-scale))!important;font-weight:500!important;line-height:1.05!important;color:rgba(255,255,255,.43)!important;font-variant-numeric:tabular-nums!important;text-transform:none!important;letter-spacing:0!important}
 #suno-create-ancestry-overlay .suno-ancestry-cycle{color:#f0b36b!important}
-#suno-create-ancestry-overlay .suno-ancestry-status{padding:7px 9px!important;font:500 11px/1.35 system-ui,sans-serif!important;color:rgba(255,255,255,.62)!important}
-#suno-create-ancestry-overlay .suno-ancestry-more{padding:5px 8px!important;font:500 10px/1.2 system-ui,sans-serif!important;color:rgba(255,255,255,.54)!important}
+#suno-create-ancestry-overlay .suno-ancestry-status{padding:calc(7px * var(--suno-ancestry-scale)) 9px!important;font-family:system-ui,sans-serif!important;font-size:calc(11px * var(--suno-ancestry-scale))!important;font-weight:500!important;line-height:1.35!important;color:rgba(255,255,255,.62)!important}
+#suno-create-ancestry-overlay .suno-ancestry-more{padding:calc(5px * var(--suno-ancestry-scale)) 8px!important;font-family:system-ui,sans-serif!important;font-size:calc(10px * var(--suno-ancestry-scale))!important;font-weight:500!important;line-height:1.2!important;color:rgba(255,255,255,.54)!important}
 @keyframes suno-ancestry-jump-pulse{0%,100%{outline-color:transparent;filter:none}25%,70%{outline-color:rgba(255,255,255,.92);filter:brightness(1.22)}}
 [data-testid="clip-row"].suno-ancestry-jump-highlight{outline:2px solid transparent!important;outline-offset:2px!important;animation:suno-ancestry-jump-pulse 1.35s ease!important}
 #suno-exact-credit-sidebar-entry{list-style:none!important;pointer-events:none!important;user-select:none!important;cursor:default!important}
@@ -874,11 +875,11 @@ function playlistLikes() {
   const WORKSPACE_BATCH_SIZE=35;
 
   const CREDIT_WIDGET_ID='suno-exact-credit-sidebar-entry';
-  const CREDIT_CACHE_KEY='__suno_exact_credit_balance_v58';
+  const CREDIT_CACHE_KEY='__suno_exact_credit_balance_v59';
   const CREDIT_REFRESH_MS=60000;
   const CREDIT_API_URL=`${STUDIO_API_BASE}/api/billing/info/`;
 
-  const previousCreditController=window.__sunoCreditsV58||window.__sunoCreditsV57||window.__sunoCreditsV56||window.__sunoCreditsV55;
+  const previousCreditController=window.__sunoCreditsV59||window.__sunoCreditsV58||window.__sunoCreditsV57||window.__sunoCreditsV56||window.__sunoCreditsV55;
   try { previousCreditController?.stop?.(); } catch(error) {}
 
   const creditState={
@@ -1109,7 +1110,7 @@ function playlistLikes() {
   }
 
   function creditDebugState() {
-    window.__sunoCreditsV58={
+    window.__sunoCreditsV59={
       value:creditState.value,
       formatted:creditText(),
       lastUpdated:creditState.lastUpdated,
@@ -2486,14 +2487,14 @@ function playlistLikes() {
   }
 
   function workspaceInstallFetchCapture() {
-    for(const key of ['__sunoWorkspaceFetchCaptureV43','__sunoWorkspaceFetchCaptureV44','__sunoWorkspaceFetchCaptureV46','__sunoWorkspaceFetchCaptureV47','__sunoWorkspaceFetchCaptureV49','__sunoWorkspaceFetchCaptureV50','__sunoWorkspaceFetchCaptureV51','__sunoWorkspaceFetchCaptureV52','__sunoWorkspaceFetchCaptureV53','__sunoWorkspaceFetchCaptureV54','__sunoWorkspaceFetchCaptureV55','__sunoWorkspaceFetchCaptureV56','__sunoWorkspaceFetchCaptureV57']) {
+    for(const key of ['__sunoWorkspaceFetchCaptureV43','__sunoWorkspaceFetchCaptureV44','__sunoWorkspaceFetchCaptureV46','__sunoWorkspaceFetchCaptureV47','__sunoWorkspaceFetchCaptureV49','__sunoWorkspaceFetchCaptureV50','__sunoWorkspaceFetchCaptureV51','__sunoWorkspaceFetchCaptureV52','__sunoWorkspaceFetchCaptureV53','__sunoWorkspaceFetchCaptureV54','__sunoWorkspaceFetchCaptureV55','__sunoWorkspaceFetchCaptureV56','__sunoWorkspaceFetchCaptureV57','__sunoWorkspaceFetchCaptureV58']) {
       const oldHook=window[key];
       if(oldHook?.wrapped&&window.fetch===oldHook.wrapped&&typeof oldHook.originalFetch==='function') {
         window.fetch=oldHook.originalFetch;
       }
       try { delete window[key]; } catch(error) {}
     }
-    if(window.__sunoWorkspaceFetchCaptureV58)return;
+    if(window.__sunoWorkspaceFetchCaptureV59)return;
     const originalFetch=window.fetch;
     if(typeof originalFetch!=='function')return;
 
@@ -2516,7 +2517,7 @@ function playlistLikes() {
     };
     wrapped.__sunoOriginalFetch=originalFetch;
     window.fetch=wrapped;
-    window.__sunoWorkspaceFetchCaptureV58={originalFetch,wrapped};
+    window.__sunoWorkspaceFetchCaptureV59={originalFetch,wrapped};
     workspaceState.fetchHookInstalled=true;
   }
 
@@ -2698,7 +2699,7 @@ function playlistLikes() {
   }
 
   function workspaceDebugState(extra={}) {
-    window.__sunoWorkspaceIndexV58={
+    window.__sunoWorkspaceIndexV59={
       workspaceId:workspaceState.id,
       workspaceIdentitySource:workspaceState.identitySource||'',
       workspaceUsesDefaultRoute:workspaceIsFallbackId(),
@@ -2738,7 +2739,7 @@ function playlistLikes() {
   const ANCESTRY_MAX_DEPTH=10;
   const ANCESTRY_MAX_ENTRIES=100;
   const ANCESTRY_POINTER_OFFSET=14;
-  const NAV_DIAGNOSTIC_KEY='__sunoAncestryNavigationDiagnosticV58';
+  const NAV_DIAGNOSTIC_KEY='__sunoAncestryNavigationDiagnosticV59';
   const navDiagnosticState={events:[],activeTarget:'',startedAt:Date.now()};
 
   function navDiagnosticRows() {
@@ -2795,7 +2796,7 @@ function playlistLikes() {
         version:58,
         url:location.href,
         exportedAt:new Date().toISOString(),
-        workspace:window.__sunoWorkspaceIndexV58||null,
+        workspace:window.__sunoWorkspaceIndexV59||null,
         events:navDiagnosticState.events
       },null,2)
     };
@@ -3126,7 +3127,7 @@ function playlistLikes() {
     return row;
   }
 
-  const SELECTED_SONG_HANDLER_KEY='__sunoSelectedSongTintV58';
+  const SELECTED_SONG_HANDLER_KEY='__sunoSelectedSongTintV59';
   let selectedSongId='';
 
   function workspaceRowSongId(row) {
@@ -3153,6 +3154,7 @@ function playlistLikes() {
   function installSelectedSongTint() {
     const old=window[SELECTED_SONG_HANDLER_KEY]||window.__sunoSelectedSongTintV57||window.__sunoSelectedSongTintV56||window.__sunoSelectedSongTintV55;
     if(old?.onClick)document.removeEventListener('click',old.onClick,true);
+    try { delete window.__sunoSelectedSongTintV58; } catch(error) {}
     try { delete window.__sunoSelectedSongTintV57; } catch(error) {}
     try { delete window.__sunoSelectedSongTintV56; } catch(error) {}
     try { delete window.__sunoSelectedSongTintV55; } catch(error) {}
@@ -3334,30 +3336,121 @@ function playlistLikes() {
       overlay?.remove();
       overlay=null;
       activeRow=null;
-      window.__sunoAncestryOverlayV58={
-        ...(window.__sunoAncestryOverlayV58||{}),open:false,lastClose:Date.now()
+      window.__sunoAncestryOverlayV59={
+        ...(window.__sunoAncestryOverlayV59||{}),open:false,lastClose:Date.now()
       };
     };
     const scheduleClose=()=> {
       clearClose();
       closeTimer=window.setTimeout(hide,ANCESTRY_CLOSE_DELAY);
     };
+    const ANCESTRY_VIEWPORT_EDGE=8;
+    const ANCESTRY_MIN_SCALE=.66;
+    let positionFrame=0;
+
+    const setPanelScale=(panel,scale)=> {
+      const safe=Math.max(ANCESTRY_MIN_SCALE,Math.min(1,Number(scale)||1));
+      panel.style.setProperty('--suno-ancestry-scale',safe.toFixed(4),'important');
+      return safe;
+    };
+
+    const panelNaturalHeight=panel=> {
+      // max-height is deliberately disabled while measuring. scrollHeight reflects the
+      // scaled row, artwork and typography sizes defined through the CSS variable.
+      panel.style.setProperty('max-height','none','important');
+      panel.style.setProperty('overflow-y','hidden','important');
+      return Math.ceil(Math.max(panel.scrollHeight,panel.getBoundingClientRect().height));
+    };
+
+    const fitPanelToViewport=(panel,availableHeight)=> {
+      availableHeight=Math.max(80,Math.floor(availableHeight));
+      setPanelScale(panel,1);
+      let naturalHeight=panelNaturalHeight(panel);
+      let scale=1;
+      let scrolling=false;
+
+      if(naturalHeight>availableHeight) {
+        setPanelScale(panel,ANCESTRY_MIN_SCALE);
+        const minimumHeight=panelNaturalHeight(panel);
+
+        if(minimumHeight<=availableHeight) {
+          // Find the largest scale that still fits, so text is never made smaller
+          // than necessary. Seven passes are more precise than a visible CSS pixel.
+          let low=ANCESTRY_MIN_SCALE;
+          let high=1;
+          for(let pass=0;pass<7;pass++) {
+            const middle=(low+high)/2;
+            setPanelScale(panel,middle);
+            const height=panelNaturalHeight(panel);
+            if(height<=availableHeight)low=middle;
+            else high=middle;
+          }
+          scale=setPanelScale(panel,low);
+          naturalHeight=panelNaturalHeight(panel);
+        } else {
+          // Even the allowed 66% density does not fit. Only now permit scrolling.
+          scale=setPanelScale(panel,ANCESTRY_MIN_SCALE);
+          naturalHeight=panelNaturalHeight(panel);
+          scrolling=true;
+          panel.style.setProperty('max-height',`${availableHeight}px`,'important');
+          panel.style.setProperty('overflow-y','auto','important');
+          panel.style.setProperty('scrollbar-gutter','stable','important');
+        }
+      }
+
+      if(!scrolling) {
+        panel.style.setProperty('max-height','none','important');
+        panel.style.setProperty('overflow-y','hidden','important');
+        panel.style.setProperty('scrollbar-gutter','auto','important');
+      }
+      panel.dataset.ancestryScale=scale.toFixed(3);
+      panel.dataset.ancestryScrolling=String(scrolling);
+      return {scale,scrolling,naturalHeight,availableHeight};
+    };
+
     const position=(row,panel)=> {
+      if(positionFrame)cancelAnimationFrame(positionFrame);
       const width=Math.max(320,Math.min(590,window.innerWidth-20));
       const x=Math.max(0,Math.min(window.innerWidth,pointerAnchor.x||0));
       const y=Math.max(0,Math.min(window.innerHeight,pointerAnchor.y||0));
       let left=x+ANCESTRY_POINTER_OFFSET;
       let top=y+ANCESTRY_POINTER_OFFSET;
+
+      setPanelScale(panel,1);
+      panel.style.setProperty('max-height','none','important');
+      panel.style.setProperty('overflow-y','hidden','important');
       panel.style.setProperty('width',`${Math.round(width)}px`,'important');
-      panel.style.setProperty('left',`${Math.round(Math.max(8,Math.min(left,window.innerWidth-width-8)))}px`,'important');
-      panel.style.setProperty('top',`${Math.round(Math.max(8,top))}px`,'important');
-      requestAnimationFrame(()=> {
+      panel.style.setProperty('left',`${Math.round(Math.max(ANCESTRY_VIEWPORT_EDGE,Math.min(left,window.innerWidth-width-ANCESTRY_VIEWPORT_EDGE)))}px`,'important');
+      panel.style.setProperty('top',`${Math.round(Math.max(ANCESTRY_VIEWPORT_EDGE,top))}px`,'important');
+
+      positionFrame=requestAnimationFrame(()=> {
+        positionFrame=0;
         if(!panel.isConnected)return;
-        const rect=panel.getBoundingClientRect();
-        if(rect.right>window.innerWidth-8)left=x-rect.width-ANCESTRY_POINTER_OFFSET;
-        if(rect.bottom>window.innerHeight-8)top=y-rect.height-ANCESTRY_POINTER_OFFSET;
-        panel.style.setProperty('left',`${Math.round(Math.max(8,Math.min(left,window.innerWidth-rect.width-8)))}px`,'important');
-        panel.style.setProperty('top',`${Math.round(Math.max(8,Math.min(top,window.innerHeight-rect.height-8)))}px`,'important');
+
+        // Preserve the accepted pointer-relative placement. If the uncompressed panel
+        // does not fit below the pointer, place it above; if it is taller than either
+        // region, start at the viewport edge so it may use nearly the full screen.
+        let rect=panel.getBoundingClientRect();
+        if(rect.right>window.innerWidth-ANCESTRY_VIEWPORT_EDGE)left=x-rect.width-ANCESTRY_POINTER_OFFSET;
+        if(rect.bottom>window.innerHeight-ANCESTRY_VIEWPORT_EDGE)top=y-rect.height-ANCESTRY_POINTER_OFFSET;
+        top=Math.max(ANCESTRY_VIEWPORT_EDGE,top);
+        left=Math.max(ANCESTRY_VIEWPORT_EDGE,Math.min(left,window.innerWidth-rect.width-ANCESTRY_VIEWPORT_EDGE));
+        panel.style.setProperty('left',`${Math.round(left)}px`,'important');
+        panel.style.setProperty('top',`${Math.round(top)}px`,'important');
+
+        const availableHeight=window.innerHeight-top-ANCESTRY_VIEWPORT_EDGE;
+        const fit=fitPanelToViewport(panel,availableHeight);
+        rect=panel.getBoundingClientRect();
+        panel.style.setProperty('left',`${Math.round(Math.max(ANCESTRY_VIEWPORT_EDGE,Math.min(left,window.innerWidth-rect.width-ANCESTRY_VIEWPORT_EDGE)))}px`,'important');
+
+        const state=window.__sunoAncestryOverlayV59||{};
+        window.__sunoAncestryOverlayV59={
+          ...state,
+          adaptiveScale:fit.scale,
+          adaptiveScrolling:fit.scrolling,
+          adaptiveAvailableHeight:fit.availableHeight,
+          adaptiveNaturalHeight:fit.naturalHeight
+        };
       });
     };
 
@@ -3484,7 +3577,7 @@ function playlistLikes() {
         list.appendChild(more);
       }
       position(row,overlay);
-      window.__sunoAncestryOverlayV58={
+      window.__sunoAncestryOverlayV59={
         open:true,songId:id,entries:tree.entries.length,truncated:tree.truncated,
         workspaceSongs:workspaceOrder().length,knownSourceLists:lnSources.size,lastOpen:Date.now()
       };
@@ -3958,4 +4051,4 @@ let raf=0, sched=()=>raf||(raf=requestAnimationFrame(()=> {
   })
 })();
 
-//# sourceURL=suno-tweaks-v58-extend-timestamp-popup.js
+//# sourceURL=suno-tweaks-v59-adaptive-ancestry-popup.js
