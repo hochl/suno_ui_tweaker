@@ -1,5 +1,5 @@
 /**
- * Suno Tweaks v54 — readable local script
+ * Suno Tweaks v56 — readable local script
  *
  * Loaded by the persistent local-file bookmarklet. The script keeps the accepted
  * layout, playlist, title-edit and title-expansion behaviour while adding a compact
@@ -17,9 +17,10 @@
  *
  * Debug objects:
  * - window.__sunoLocalScriptLoader     — loader status
- * - window.__sunoWorkspaceIndexV54     — workspace indexing status
- * - window.__sunoAncestryOverlayV54    — ancestry overlay status
- * - window.__sunoAncestryNavigationDiagnosticV54 — navigation event log
+ * - window.__sunoWorkspaceIndexV56     — workspace indexing status
+ * - window.__sunoAncestryOverlayV56    — ancestry overlay status
+ * - window.__sunoAncestryNavigationDiagnosticV56 — navigation event log
+ * - window.__sunoCreditsV56        — exact credit balance and refresh status
  */
 
 (()=> {
@@ -113,6 +114,9 @@ li>[role="button"][aria-roledescription="sortable"] .clip-row .clip-image-contai
 #suno-create-ancestry-overlay .suno-ancestry-more{padding:5px 8px!important;font:500 10px/1.2 system-ui,sans-serif!important;color:rgba(255,255,255,.54)!important}
 @keyframes suno-ancestry-jump-pulse{0%,100%{outline-color:transparent;filter:none}25%,70%{outline-color:rgba(255,255,255,.92);filter:brightness(1.22)}}
 [data-testid="clip-row"].suno-ancestry-jump-highlight{outline:2px solid transparent!important;outline-offset:2px!important;animation:suno-ancestry-jump-pulse 1.35s ease!important}
+#suno-exact-credit-sidebar-entry{list-style:none!important;pointer-events:none!important;user-select:none!important;cursor:default!important}
+#suno-exact-credit-sidebar-entry [data-suno-credit-line="1"]{display:flex!important;align-items:center!important;justify-content:flex-start!important;width:100%!important;min-width:0!important;box-sizing:border-box!important;cursor:default!important}
+#suno-exact-credit-sidebar-entry [data-suno-credit-value="1"]{display:block!important;min-width:0!important;overflow:hidden!important;text-overflow:ellipsis!important;white-space:nowrap!important;font-variant-numeric:tabular-nums!important;font-weight:600!important}
 `;
   function U(raw, onlySuno=false) {
     if(!raw)return"";
@@ -866,6 +870,270 @@ function playlistLikes() {
   const STUDIO_API_BASE='https://studio-api-prod.suno.com';
   const WORKSPACE_REQUEST_CONCURRENCY=2;
   const WORKSPACE_BATCH_SIZE=35;
+
+  const CREDIT_WIDGET_ID='suno-exact-credit-sidebar-entry';
+  const CREDIT_CACHE_KEY='__suno_exact_credit_balance_v56';
+  const CREDIT_REFRESH_MS=60000;
+  const CREDIT_API_URL=`${STUDIO_API_BASE}/api/billing/info/`;
+
+  const previousCreditController=window.__sunoCreditsV56||window.__sunoCreditsV55;
+  try { previousCreditController?.stop?.(); } catch(error) {}
+
+  const creditState={
+    value:null,
+    lastUpdated:0,
+    lastAttempt:0,
+    lastError:'',
+    request:null,
+    interval:0,
+    visibilityHandler:null
+  };
+
+  function creditParseNumber(value) {
+    if(typeof value==='number')return Number.isFinite(value)&&value>=0?Math.trunc(value):null;
+    if(typeof value!=='string')return null;
+    const normalized=value.replace(/[\s,]/g,'');
+    if(!/^\d+(?:\.\d+)?$/.test(normalized))return null;
+    const number=Number(normalized);
+    return Number.isFinite(number)&&number>=0?Math.trunc(number):null;
+  }
+
+  function creditExtractBalance(payload) {
+    if(!payload||typeof payload!=='object')return null;
+    const preferredKeys=[
+      'total_credits_left','totalCreditsLeft','credits_left','creditsLeft',
+      'remaining_credits','remainingCredits','credit_balance','creditBalance'
+    ];
+    const visited=new Set();
+    const inspect=(value,depth=0)=> {
+      if(!value||typeof value!=='object'||depth>5||visited.has(value))return null;
+      visited.add(value);
+      for(const key of preferredKeys) {
+        if(Object.prototype.hasOwnProperty.call(value,key)) {
+          const parsed=creditParseNumber(value[key]);
+          if(parsed!==null)return parsed;
+        }
+      }
+      for(const [key,child] of Object.entries(value)) {
+        if(!/(billing|credit|balance|subscription|plan|usage|account|data|info)/i.test(key))continue;
+        const parsed=inspect(child,depth+1);
+        if(parsed!==null)return parsed;
+      }
+      return null;
+    };
+    return inspect(payload);
+  }
+
+  function creditFormattedValue(value=creditState.value) {
+    return Number.isFinite(value)?Math.trunc(value).toLocaleString('en-US'):'';
+  }
+
+  function creditText(value=creditState.value) {
+    const formatted=creditFormattedValue(value);
+    return formatted?`${formatted} Credits`:'';
+  }
+
+  function creditFindHomeLink() {
+    const normalize=link=>String(link?.textContent||'').replace(/\s+/g,' ').trim();
+
+    // Suno currently maps the visible "Home" item to /discover. Prefer the exact
+    // navigation block supplied by the page instead of falling back to the logo.
+    const exact=document.querySelector('div.flex.flex-col.gap-px.px-3 > a[href="/discover"]');
+    if(exact&&/^home$/i.test(normalize(exact)))return exact;
+
+    const candidates=[...document.querySelectorAll('a[href="/discover"],a[href="/home"],a[href="/"]')];
+    const inNavigationBlock=link=>Boolean(
+      link.parentElement?.matches?.('div.flex.flex-col.gap-px.px-3')||
+      link.closest?.('nav,aside,[data-sidebar],[class*="sidebar"],[class*="Sidebar"]')
+    );
+    return candidates.find(link=>/^home$/i.test(normalize(link))&&inNavigationBlock(link))||
+      candidates.find(link=>/^home$/i.test(normalize(link)))||null;
+  }
+
+  function creditCreateSidebarEntry(homeLink) {
+    const entry=document.createElement('div');
+    entry.id=CREDIT_WIDGET_ID;
+    entry.dataset.sunoExactCredits='1';
+    entry.dataset.sunoCreditLine='1';
+    entry.className=homeLink.className;
+    entry.setAttribute('data-inactive','');
+    entry.setAttribute('role','status');
+    entry.setAttribute('aria-live','polite');
+    entry.setAttribute('aria-atomic','true');
+
+    // Match Suno's button structure so the row occupies exactly the same navigation
+    // column as Home, but keep it non-interactive and display text only.
+    const overlay=document.createElement('span');
+    overlay.setAttribute('aria-hidden','true');
+    overlay.className='hxc-btn-overlay-slot hxc-btn-border';
+
+    const content=document.createElement('span');
+    content.className='hxc-btn-content';
+
+    const label=document.createElement('span');
+    label.dataset.sunoCreditValue='1';
+    label.className='overflow-hidden whitespace-nowrap transition-opacity duration-200 group-data-[show-content=false]/sidebar:opacity-0';
+
+    content.appendChild(label);
+    entry.append(overlay,content);
+    return entry;
+  }
+
+  function creditMountSidebar() {
+    const text=creditText();
+    if(!text)return false;
+    const homeLink=creditFindHomeLink();
+    if(!homeLink)return false;
+
+    // The Home link itself is a direct child of the px-3 navigation column. Insert
+    // the credits as that column's first row, immediately before Home.
+    const navigationBlock=homeLink.parentElement;
+    if(!navigationBlock)return false;
+
+    let entry=document.getElementById(CREDIT_WIDGET_ID);
+    if(!entry||entry.parentElement!==navigationBlock) {
+      entry?.remove();
+      entry=creditCreateSidebarEntry(homeLink);
+      navigationBlock.insertBefore(entry,homeLink);
+    } else if(entry.nextElementSibling!==homeLink) {
+      navigationBlock.insertBefore(entry,homeLink);
+    }
+
+    const valueNode=entry.querySelector('[data-suno-credit-value="1"]')||entry;
+    if(valueNode.textContent!==text)valueNode.textContent=text;
+    entry.setAttribute('aria-label',text);
+    entry.title=text;
+    return true;
+  }
+
+  function creditElementIsBalanceDisplay(element) {
+    let node=element;
+    for(let depth=0;node&&node!==document.body&&depth<6;depth++,node=node.parentElement) {
+      const marker=[
+        typeof node.className==='string'?node.className:'',node.id||'',
+        node.getAttribute?.('data-testid')||'',node.getAttribute?.('aria-label')||'',
+        node.getAttribute?.('href')||''
+      ].join(' ');
+      if(/(?:credit|billing|subscription|account)/i.test(marker))return true;
+    }
+    return false;
+  }
+
+  function creditReplaceAbbreviatedLabels() {
+    const text=creditText();
+    if(!text)return;
+    const abbreviated=/^\s*\d[\d,.]*\s*[KMB]?\s+credits?\s*$/i;
+    document.querySelectorAll('span,p,a,button').forEach(element=> {
+      if(element.closest(`#${CREDIT_WIDGET_ID}`))return;
+      if(element.children.length||!creditElementIsBalanceDisplay(element))return;
+      const current=element.textContent.trim();
+      if(!abbreviated.test(current))return;
+      if(current!==text)element.textContent=text;
+    });
+  }
+
+  function creditRender() {
+    creditMountSidebar();
+    creditReplaceAbbreviatedLabels();
+  }
+
+  function creditStore(value) {
+    try {
+      sessionStorage.setItem(CREDIT_CACHE_KEY,JSON.stringify({value,updatedAt:Date.now()}));
+    } catch(error) {}
+  }
+
+  function creditLoadStored() {
+    try {
+      const cached=JSON.parse(sessionStorage.getItem(CREDIT_CACHE_KEY)||'null');
+      const value=creditParseNumber(cached?.value);
+      if(value===null)return;
+      creditState.value=value;
+      creditState.lastUpdated=Number(cached.updatedAt)||0;
+    } catch(error) {}
+  }
+
+  async function creditGetClerkToken() {
+    for(let attempt=0;attempt<12;attempt++) {
+      const session=window.Clerk?.session;
+      if(session&&typeof session.getToken==='function') {
+        try { return await session.getToken(); } catch(error) {}
+      }
+      await new Promise(resolve=>window.setTimeout(resolve,250));
+    }
+    return '';
+  }
+
+  async function creditFetchBilling() {
+    const token=await creditGetClerkToken();
+    const headers={accept:'application/json'};
+    if(token)headers.authorization=`Bearer ${token}`;
+    let response=await fetch(CREDIT_API_URL,{
+      method:'GET',credentials:'include',cache:'no-store',headers
+    });
+    if(response.status===401&&!token) {
+      const retryToken=await creditGetClerkToken();
+      if(retryToken)response=await fetch(CREDIT_API_URL,{
+        method:'GET',credentials:'include',cache:'no-store',
+        headers:{accept:'application/json',authorization:`Bearer ${retryToken}`}
+      });
+    }
+    if(!response.ok)throw new Error(`Billing request failed: ${response.status}`);
+    return response.json();
+  }
+
+  function creditRefresh(force=false) {
+    const now=Date.now();
+    if(creditState.request)return creditState.request;
+    if(!force&&now-creditState.lastAttempt<10000)return Promise.resolve(creditState.value);
+    creditState.lastAttempt=now;
+    creditState.request=creditFetchBilling().then(payload=> {
+      const value=creditExtractBalance(payload);
+      if(value===null)throw new Error('Billing response contained no exact credit balance');
+      creditState.value=value;
+      creditState.lastUpdated=Date.now();
+      creditState.lastError='';
+      creditStore(value);
+      creditRender();
+      return value;
+    }).catch(error=> {
+      creditState.lastError=String(error?.message||error);
+      return creditState.value;
+    }).finally(()=> {
+      creditState.request=null;
+      creditDebugState();
+    });
+    return creditState.request;
+  }
+
+  function creditDebugState() {
+    window.__sunoCreditsV56={
+      value:creditState.value,
+      formatted:creditText(),
+      lastUpdated:creditState.lastUpdated,
+      lastAttempt:creditState.lastAttempt,
+      lastError:creditState.lastError,
+      refreshing:Boolean(creditState.request),
+      refresh:()=>creditRefresh(true),
+      stop:()=> {
+        if(creditState.interval)window.clearInterval(creditState.interval);
+        if(creditState.visibilityHandler)document.removeEventListener('visibilitychange',creditState.visibilityHandler);
+        creditState.interval=0;
+      }
+    };
+  }
+
+  function creditInitialize() {
+    creditLoadStored();
+    creditRender();
+    creditRefresh(true);
+    creditState.interval=window.setInterval(()=>creditRefresh(true),CREDIT_REFRESH_MS);
+    creditState.visibilityHandler=()=> {
+      if(document.visibilityState==='visible'&&Date.now()-creditState.lastUpdated>30000)creditRefresh(true);
+    };
+    document.addEventListener('visibilitychange',creditState.visibilityHandler,{passive:true});
+    creditDebugState();
+  }
 
   let lnSources=new Map();
   let lnSongInfo=new Map();
@@ -2118,14 +2386,14 @@ function playlistLikes() {
   }
 
   function workspaceInstallFetchCapture() {
-    for(const key of ['__sunoWorkspaceFetchCaptureV43','__sunoWorkspaceFetchCaptureV44','__sunoWorkspaceFetchCaptureV46','__sunoWorkspaceFetchCaptureV47','__sunoWorkspaceFetchCaptureV49','__sunoWorkspaceFetchCaptureV50','__sunoWorkspaceFetchCaptureV51','__sunoWorkspaceFetchCaptureV52']) {
+    for(const key of ['__sunoWorkspaceFetchCaptureV43','__sunoWorkspaceFetchCaptureV44','__sunoWorkspaceFetchCaptureV46','__sunoWorkspaceFetchCaptureV47','__sunoWorkspaceFetchCaptureV49','__sunoWorkspaceFetchCaptureV50','__sunoWorkspaceFetchCaptureV51','__sunoWorkspaceFetchCaptureV52','__sunoWorkspaceFetchCaptureV53','__sunoWorkspaceFetchCaptureV54','__sunoWorkspaceFetchCaptureV55']) {
       const oldHook=window[key];
       if(oldHook?.wrapped&&window.fetch===oldHook.wrapped&&typeof oldHook.originalFetch==='function') {
         window.fetch=oldHook.originalFetch;
       }
       try { delete window[key]; } catch(error) {}
     }
-    if(window.__sunoWorkspaceFetchCaptureV53)return;
+    if(window.__sunoWorkspaceFetchCaptureV56)return;
     const originalFetch=window.fetch;
     if(typeof originalFetch!=='function')return;
 
@@ -2148,7 +2416,7 @@ function playlistLikes() {
     };
     wrapped.__sunoOriginalFetch=originalFetch;
     window.fetch=wrapped;
-    window.__sunoWorkspaceFetchCaptureV53={originalFetch,wrapped};
+    window.__sunoWorkspaceFetchCaptureV56={originalFetch,wrapped};
     workspaceState.fetchHookInstalled=true;
   }
 
@@ -2320,7 +2588,7 @@ function playlistLikes() {
   }
 
   function workspaceDebugState(extra={}) {
-    window.__sunoWorkspaceIndexV54={
+    window.__sunoWorkspaceIndexV56={
       workspaceId:workspaceState.id,
       workspaceIdentitySource:workspaceState.identitySource||'',
       workspaceUsesDefaultRoute:workspaceIsFallbackId(),
@@ -2360,7 +2628,7 @@ function playlistLikes() {
   const ANCESTRY_MAX_DEPTH=10;
   const ANCESTRY_MAX_ENTRIES=100;
   const ANCESTRY_POINTER_OFFSET=14;
-  const NAV_DIAGNOSTIC_KEY='__sunoAncestryNavigationDiagnosticV54';
+  const NAV_DIAGNOSTIC_KEY='__sunoAncestryNavigationDiagnosticV56';
   const navDiagnosticState={events:[],activeTarget:'',startedAt:Date.now()};
 
   function navDiagnosticRows() {
@@ -2417,7 +2685,7 @@ function playlistLikes() {
         version:52,
         url:location.href,
         exportedAt:new Date().toISOString(),
-        workspace:window.__sunoWorkspaceIndexV54||null,
+        workspace:window.__sunoWorkspaceIndexV56||null,
         events:navDiagnosticState.events
       },null,2)
     };
@@ -2736,7 +3004,7 @@ function playlistLikes() {
     return row;
   }
 
-  const SELECTED_SONG_HANDLER_KEY='__sunoSelectedSongTintV54';
+  const SELECTED_SONG_HANDLER_KEY='__sunoSelectedSongTintV56';
   let selectedSongId='';
 
   function workspaceRowSongId(row) {
@@ -2761,8 +3029,9 @@ function playlistLikes() {
   }
 
   function installSelectedSongTint() {
-    const old=window[SELECTED_SONG_HANDLER_KEY];
+    const old=window[SELECTED_SONG_HANDLER_KEY]||window.__sunoSelectedSongTintV55;
     if(old?.onClick)document.removeEventListener('click',old.onClick,true);
+    try { delete window.__sunoSelectedSongTintV55; } catch(error) {}
 
     const onClick=event=> {
       const row=event.target.closest?.('[data-testid="clip-row"]');
@@ -2941,8 +3210,8 @@ function playlistLikes() {
       overlay?.remove();
       overlay=null;
       activeRow=null;
-      window.__sunoAncestryOverlayV54={
-        ...(window.__sunoAncestryOverlayV54||{}),open:false,lastClose:Date.now()
+      window.__sunoAncestryOverlayV56={
+        ...(window.__sunoAncestryOverlayV56||{}),open:false,lastClose:Date.now()
       };
     };
     const scheduleClose=()=> {
@@ -3080,7 +3349,7 @@ function playlistLikes() {
         list.appendChild(more);
       }
       position(row,overlay);
-      window.__sunoAncestryOverlayV54={
+      window.__sunoAncestryOverlayV56={
         open:true,songId:id,entries:tree.entries.length,truncated:tree.truncated,
         workspaceSongs:workspaceOrder().length,knownSourceLists:lnSources.size,lastOpen:Date.now()
       };
@@ -3528,6 +3797,7 @@ function run() {
     clearOverlayDiscs();
     playbar();
     exactNumbers();
+    creditRender();
     aboutInBanner();
     clearPlayDiscs();
     clearOverlayDiscs()
@@ -3542,6 +3812,7 @@ let raf=0, sched=()=>raf||(raf=requestAnimationFrame(()=> {
   installSongTitleExpansion();
   installAncestryOverlay();
   installSelectedSongTint();
+  creditInitialize();
   run();
   window[OBS]=new MutationObserver(sched);
   window[OBS].observe(document.body, {
@@ -3552,4 +3823,4 @@ let raf=0, sched=()=>raf||(raf=requestAnimationFrame(()=> {
   })
 })();
 
-//# sourceURL=suno-tweaks-v54-selected-green-popup-yellow.js
+//# sourceURL=suno-tweaks-v56-exact-sidebar-credits.js
