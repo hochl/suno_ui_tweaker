@@ -1,5 +1,5 @@
 /**
- * Suno Tweaks v63 — readable local script
+ * Suno Tweaks v64 — readable local script
  *
  * Loaded by the persistent local-file bookmarklet. The script keeps the accepted
  * layout, playlist, title-edit and title-expansion behaviour while adding a compact
@@ -15,14 +15,14 @@
  * - Workspace navigation uses measured rows, validated clip sequences and created-at chronology.
  * - Browser scroll anchoring is disabled only during a controlled ancestry jump.
  * - The ancestry popup expands to the viewport, then scales to 66%, then scrolls.
- * - Repeated ancestors remain fully visible; later occurrences use yellow staggered bracket arrows between relation labels.
+ * - Repeated ancestors remain fully visible; arrows to the same target merge into a shared yellow trunk with hollow junction circles.
  *
  * Debug objects:
  * - window.__sunoLocalScriptLoader     — loader status
- * - window.__sunoWorkspaceIndexV63     — workspace indexing status
- * - window.__sunoAncestryOverlayV63    — ancestry overlay status
- * - window.__sunoAncestryNavigationDiagnosticV63 — navigation event log
- * - window.__sunoCreditsV63        — exact credit balance and refresh status
+ * - window.__sunoWorkspaceIndexV64     — workspace indexing status
+ * - window.__sunoAncestryOverlayV64    — ancestry overlay status
+ * - window.__sunoAncestryNavigationDiagnosticV64 — navigation event log
+ * - window.__sunoCreditsV64        — exact credit balance and refresh status
  */
 
 (()=> {
@@ -103,6 +103,7 @@ li>[role="button"][aria-roledescription="sortable"] .clip-row .clip-image-contai
 #suno-create-ancestry-overlay .suno-ancestry-entry{--suno-ancestry-depth:1;position:relative!important;z-index:1!important;display:grid!important;grid-template-columns:calc(34px * var(--suno-ancestry-scale)) minmax(0,1fr) auto!important;align-items:center!important;column-gap:calc(7px * var(--suno-ancestry-scale))!important;width:calc(100% - var(--suno-ancestry-arrow-gutter))!important;min-height:calc(42px * var(--suno-ancestry-scale))!important;box-sizing:border-box!important;margin:0 var(--suno-ancestry-arrow-gutter) 0 0!important;padding:calc(3px * var(--suno-ancestry-scale)) 7px calc(3px * var(--suno-ancestry-scale)) calc(7px + (var(--suno-ancestry-depth) - 1)*14px)!important;border:0!important;border-radius:7px!important;background:transparent!important;color:inherit!important;text-align:left!important;font-family:system-ui,sans-serif!important;cursor:default!important}
 #suno-create-ancestry-overlay .suno-ancestry-links{position:absolute!important;inset:0!important;z-index:2!important;display:block!important;width:100%!important;height:100%!important;overflow:visible!important;pointer-events:none!important}
 #suno-create-ancestry-overlay .suno-ancestry-link{fill:none!important;stroke:rgba(255,218,76,.84)!important;stroke-width:1.25!important;stroke-linecap:round!important;stroke-linejoin:round!important;vector-effect:non-scaling-stroke!important}
+#suno-create-ancestry-overlay .suno-ancestry-junction{fill:rgba(13,13,15,.98)!important;stroke:rgba(255,218,76,.92)!important;stroke-width:1.35!important;vector-effect:non-scaling-stroke!important}
 #suno-create-ancestry-overlay .suno-ancestry-entry[data-available="true"]{cursor:pointer!important}
 #suno-create-ancestry-overlay .suno-ancestry-entry[data-available="true"]:hover,#suno-create-ancestry-overlay .suno-ancestry-entry[data-available="true"]:focus-visible{background:rgba(255,255,255,.10)!important;outline:none!important}
 #suno-create-ancestry-overlay .suno-ancestry-entry[data-available="false"]{opacity:.56!important}
@@ -878,11 +879,11 @@ function playlistLikes() {
   const WORKSPACE_BATCH_SIZE=35;
 
   const CREDIT_WIDGET_ID='suno-exact-credit-sidebar-entry';
-  const CREDIT_CACHE_KEY='__suno_exact_credit_balance_v63';
+  const CREDIT_CACHE_KEY='__suno_exact_credit_balance_v64';
   const CREDIT_REFRESH_MS=60000;
   const CREDIT_API_URL=`${STUDIO_API_BASE}/api/billing/info/`;
 
-  const previousCreditController=window.__sunoCreditsV63||window.__sunoCreditsV61||window.__sunoCreditsV60||window.__sunoCreditsV59||window.__sunoCreditsV58||window.__sunoCreditsV57||window.__sunoCreditsV56||window.__sunoCreditsV55;
+  const previousCreditController=window.__sunoCreditsV64||window.__sunoCreditsV61||window.__sunoCreditsV60||window.__sunoCreditsV59||window.__sunoCreditsV58||window.__sunoCreditsV57||window.__sunoCreditsV56||window.__sunoCreditsV55;
   try { previousCreditController?.stop?.(); } catch(error) {}
 
   const creditState={
@@ -1113,7 +1114,7 @@ function playlistLikes() {
   }
 
   function creditDebugState() {
-    window.__sunoCreditsV63={
+    window.__sunoCreditsV64={
       value:creditState.value,
       formatted:creditText(),
       lastUpdated:creditState.lastUpdated,
@@ -2497,7 +2498,7 @@ function playlistLikes() {
       }
       try { delete window[key]; } catch(error) {}
     }
-    if(window.__sunoWorkspaceFetchCaptureV63)return;
+    if(window.__sunoWorkspaceFetchCaptureV64)return;
     const originalFetch=window.fetch;
     if(typeof originalFetch!=='function')return;
 
@@ -2520,7 +2521,7 @@ function playlistLikes() {
     };
     wrapped.__sunoOriginalFetch=originalFetch;
     window.fetch=wrapped;
-    window.__sunoWorkspaceFetchCaptureV63={originalFetch,wrapped};
+    window.__sunoWorkspaceFetchCaptureV64={originalFetch,wrapped};
     workspaceState.fetchHookInstalled=true;
   }
 
@@ -2702,7 +2703,7 @@ function playlistLikes() {
   }
 
   function workspaceDebugState(extra={}) {
-    window.__sunoWorkspaceIndexV63={
+    window.__sunoWorkspaceIndexV64={
       workspaceId:workspaceState.id,
       workspaceIdentitySource:workspaceState.identitySource||'',
       workspaceUsesDefaultRoute:workspaceIsFallbackId(),
@@ -2742,7 +2743,7 @@ function playlistLikes() {
   const ANCESTRY_MAX_DEPTH=10;
   const ANCESTRY_MAX_ENTRIES=100;
   const ANCESTRY_POINTER_OFFSET=14;
-  const NAV_DIAGNOSTIC_KEY='__sunoAncestryNavigationDiagnosticV63';
+  const NAV_DIAGNOSTIC_KEY='__sunoAncestryNavigationDiagnosticV64';
   const navDiagnosticState={events:[],activeTarget:'',startedAt:Date.now()};
 
   function navDiagnosticRows() {
@@ -2799,7 +2800,7 @@ function playlistLikes() {
         version:62,
         url:location.href,
         exportedAt:new Date().toISOString(),
-        workspace:window.__sunoWorkspaceIndexV63||null,
+        workspace:window.__sunoWorkspaceIndexV64||null,
         events:navDiagnosticState.events
       },null,2)
     };
@@ -2966,20 +2967,21 @@ function playlistLikes() {
   function lnDrawAncestryDuplicateArrows(panel) {
     const list=panel?.querySelector('.suno-ancestry-list');
     const svg=list?.querySelector(':scope > .suno-ancestry-links');
-    if(!list||!svg)return {arrows:0,lanes:0,gutter:0};
-    svg.querySelectorAll('.suno-ancestry-link').forEach(path=>path.remove());
+    if(!list||!svg)return {arrows:0,targets:0,mergedConnectors:0,junctions:0,lanes:0,gutter:0};
+    svg.querySelectorAll('.suno-ancestry-link,.suno-ancestry-junction').forEach(element=>element.remove());
 
     const references=[...list.querySelectorAll('.suno-ancestry-entry[data-duplicate-of]')];
-    const logicalGutter=references.length?Math.min(124,22+references.length*11):18;
+    if(!references.length) {
+      list.style.setProperty('--suno-ancestry-arrow-gutter','calc(18px * var(--suno-ancestry-scale))','important');
+      return {arrows:0,targets:0,mergedConnectors:0,junctions:0,lanes:0,gutter:18};
+    }
+
+    const preliminaryTargets=new Set(references.map(reference=>reference.dataset.duplicateOf).filter(value=>value!==undefined));
+    const logicalGutter=Math.min(132,22+preliminaryTargets.size*13+Math.min(24,Math.max(0,references.length-preliminaryTargets.size)*3));
     list.style.setProperty('--suno-ancestry-arrow-gutter',`calc(${logicalGutter}px * var(--suno-ancestry-scale))`,'important');
 
-    const width=Math.max(1,list.scrollWidth);
-    const height=Math.max(1,list.scrollHeight);
-    svg.setAttribute('viewBox',`0 0 ${width} ${height}`);
-    svg.setAttribute('width',String(width));
-    svg.setAttribute('height',String(height));
-    if(!references.length)return {arrows:0,lanes:0,gutter:logicalGutter};
-
+    // Reserve the arrow gutter before measuring. This ensures the relation badges have
+    // already moved to their final x positions when the SVG geometry is calculated.
     const listRect=list.getBoundingClientRect();
     const scale=Math.max(.66,Math.min(1,Number.parseFloat(getComputedStyle(panel).getPropertyValue('--suno-ancestry-scale'))||1));
     const markerId=svg.dataset.markerId;
@@ -3001,61 +3003,96 @@ function playlistLikes() {
         startX:relationRect.right-listRect.left+4*scale,
         startY:relationRect.top-listRect.top+relationRect.height/2,
         targetX:targetRect.right-listRect.left+3*scale,
-        targetBaseY:targetRect.top-listRect.top+targetRect.height/2,
-        targetHalfHeight:targetRect.height/2,
+        targetY:targetRect.top-listRect.top+targetRect.height/2,
         entryRight:referenceRect.right-listRect.left,
         distance:Math.max(1,(Number(reference.dataset.entryIndex)||0)-(Number(reference.dataset.duplicateOf)||0)),
         pixelDistance:Math.abs((referenceRect.top+referenceRect.height/2)-(targetEntryRect.top+targetEntryRect.height/2))
       });
     }
 
-    // Short jumps use the inner tracks. Longer jumps are assigned progressively
-    // farther-right tracks, which is the usual low-crossing layout for arc diagrams.
-    links.sort((a,b)=>a.distance-b.distance||a.pixelDistance-b.pixelDistance||a.fromIndex-b.fromIndex);
-    const firstEntryRight=Math.max(...links.map(link=>link.entryRight));
+    // All later occurrences that point to the same first occurrence share one vertical trunk.
+    // The farthest occurrence supplies the full bracket and arrowhead. Nearer occurrences end
+    // at that trunk with a hollow junction circle, so only one line continues to the target song.
+    const groupedByTarget=new Map();
+    for(const link of links) {
+      if(!groupedByTarget.has(link.toIndex))groupedByTarget.set(link.toIndex,[]);
+      groupedByTarget.get(link.toIndex).push(link);
+    }
+    const groups=[...groupedByTarget.entries()].map(([toIndex,groupLinks])=> {
+      groupLinks.sort((a,b)=>b.distance-a.distance||b.pixelDistance-a.pixelDistance||b.fromIndex-a.fromIndex);
+      return {
+        toIndex,
+        links:groupLinks,
+        main:groupLinks[0],
+        maxDistance:Math.max(...groupLinks.map(link=>link.distance)),
+        maxPixelDistance:Math.max(...groupLinks.map(link=>link.pixelDistance)),
+        entryRight:Math.max(...groupLinks.map(link=>link.entryRight))
+      };
+    });
+
+    // Short target groups use inner tracks; longer shared trunks are placed farther right.
+    groups.sort((a,b)=>a.maxDistance-b.maxDistance||a.maxPixelDistance-b.maxPixelDistance||a.toIndex-b.toIndex);
+    const width=Math.max(1,list.scrollWidth);
+    const height=Math.max(1,list.scrollHeight);
+    svg.setAttribute('viewBox',`0 0 ${width} ${height}`);
+    svg.setAttribute('width',String(width));
+    svg.setAttribute('height',String(height));
+
+    const firstEntryRight=Math.max(...groups.map(group=>group.entryRight));
     const innerLane=firstEntryRight+7*scale;
     const outerLane=Math.max(innerLane,listRect.width-7*scale);
-    const laneGap=links.length>1?(outerLane-innerLane)/(links.length-1):0;
-
-    // Several references may point to the same first occurrence. Give their arrowheads
-    // slightly different slots inside the target relation badge so their final feet remain visible.
-    const targetGroups=new Map();
-    for(const link of links) {
-      const key=link.toIndex;
-      if(!targetGroups.has(key))targetGroups.set(key,[]);
-      targetGroups.get(key).push(link);
-    }
-    const slotOffsets=[];
-    for(let index=0;index<16;index++) {
-      if(index===0)slotOffsets.push(0);
-      else {
-        const step=Math.ceil(index/2)*4*scale;
-        slotOffsets.push(index%2?-step:step);
-      }
-    }
-    for(const group of targetGroups.values()) {
-      group.sort((a,b)=>a.distance-b.distance||a.fromIndex-b.fromIndex);
-      group.forEach((link,index)=> {
-        const limit=Math.max(0,link.targetHalfHeight-3*scale);
-        const offset=Math.max(-limit,Math.min(limit,slotOffsets[index]||0));
-        link.targetY=link.targetBaseY+offset;
-      });
-    }
-
+    const laneGap=groups.length>1?(outerLane-innerLane)/(groups.length-1):0;
     const namespace='http://www.w3.org/2000/svg';
-    links.forEach((link,laneIndex)=> {
+    let mergedConnectors=0;
+    let junctions=0;
+
+    groups.forEach((group,laneIndex)=> {
       const laneX=innerLane+laneGap*laneIndex;
-      const path=document.createElementNS(namespace,'path');
-      path.classList.add('suno-ancestry-link');
-      path.dataset.fromIndex=String(link.fromIndex);
-      path.dataset.toIndex=String(link.toIndex);
-      path.dataset.lane=String(laneIndex);
-      path.dataset.jump=String(link.distance);
-      path.setAttribute('d',lnBracketArrowPath(link.startX,link.startY,laneX,link.targetY,link.targetX,5*scale));
-      if(markerId)path.setAttribute('marker-end',`url(#${markerId})`);
-      svg.appendChild(path);
+      const main=group.main;
+
+      const trunk=document.createElementNS(namespace,'path');
+      trunk.classList.add('suno-ancestry-link','suno-ancestry-main-link');
+      trunk.dataset.fromIndex=String(main.fromIndex);
+      trunk.dataset.toIndex=String(main.toIndex);
+      trunk.dataset.lane=String(laneIndex);
+      trunk.dataset.jump=String(main.distance);
+      trunk.dataset.mergedCount=String(group.links.length);
+      trunk.setAttribute('d',lnBracketArrowPath(main.startX,main.startY,laneX,main.targetY,main.targetX,5*scale));
+      if(markerId)trunk.setAttribute('marker-end',`url(#${markerId})`);
+      svg.appendChild(trunk);
+
+      for(const link of group.links.slice(1)) {
+        const connector=document.createElementNS(namespace,'path');
+        connector.classList.add('suno-ancestry-link','suno-ancestry-merge-link');
+        connector.dataset.fromIndex=String(link.fromIndex);
+        connector.dataset.toIndex=String(link.toIndex);
+        connector.dataset.lane=String(laneIndex);
+        connector.dataset.jump=String(link.distance);
+        connector.setAttribute('d',`M ${link.startX.toFixed(1)} ${link.startY.toFixed(1)} H ${laneX.toFixed(1)}`);
+        svg.appendChild(connector);
+        mergedConnectors++;
+
+        const circle=document.createElementNS(namespace,'circle');
+        circle.classList.add('suno-ancestry-junction');
+        circle.dataset.fromIndex=String(link.fromIndex);
+        circle.dataset.toIndex=String(link.toIndex);
+        circle.setAttribute('cx',laneX.toFixed(1));
+        circle.setAttribute('cy',link.startY.toFixed(1));
+        circle.setAttribute('r',String(3.5*scale));
+        svg.appendChild(circle);
+        junctions++;
+      }
     });
-    return {arrows:links.length,lanes:links.length,gutter:logicalGutter};
+
+    return {
+      arrows:groups.length+mergedConnectors,
+      targets:groups.length,
+      mainArrows:groups.length,
+      mergedConnectors,
+      junctions,
+      lanes:groups.length,
+      gutter:logicalGutter
+    };
   }
 
   function workspaceScrollContainer() {
@@ -3282,7 +3319,7 @@ function playlistLikes() {
     return row;
   }
 
-  const SELECTED_SONG_HANDLER_KEY='__sunoSelectedSongTintV63';
+  const SELECTED_SONG_HANDLER_KEY='__sunoSelectedSongTintV64';
   let selectedSongId='';
 
   function workspaceRowSongId(row) {
@@ -3494,8 +3531,8 @@ function playlistLikes() {
       overlay?.remove();
       overlay=null;
       activeRow=null;
-      window.__sunoAncestryOverlayV63={
-        ...(window.__sunoAncestryOverlayV63||{}),open:false,lastClose:Date.now()
+      window.__sunoAncestryOverlayV64={
+        ...(window.__sunoAncestryOverlayV64||{}),open:false,lastClose:Date.now()
       };
     };
     const scheduleClose=()=> {
@@ -3602,8 +3639,8 @@ function playlistLikes() {
         panel.style.setProperty('left',`${Math.round(Math.max(ANCESTRY_VIEWPORT_EDGE,Math.min(left,window.innerWidth-rect.width-ANCESTRY_VIEWPORT_EDGE)))}px`,'important');
 
         lnDrawAncestryDuplicateArrows(panel);
-        const state=window.__sunoAncestryOverlayV63||{};
-        window.__sunoAncestryOverlayV63={
+        const state=window.__sunoAncestryOverlayV64||{};
+        window.__sunoAncestryOverlayV64={
           ...state,
           adaptiveScale:fit.scale,
           adaptiveScrolling:fit.scrolling,
@@ -3748,9 +3785,9 @@ function playlistLikes() {
       position(row,overlay);
       requestAnimationFrame(()=> {
         const arrowLayout=lnDrawAncestryDuplicateArrows(overlay);
-        window.__sunoAncestryOverlayV63={...(window.__sunoAncestryOverlayV63||{}),arrowLayout};
+        window.__sunoAncestryOverlayV64={...(window.__sunoAncestryOverlayV64||{}),arrowLayout};
       });
-      window.__sunoAncestryOverlayV63={
+      window.__sunoAncestryOverlayV64={
         open:true,songId:id,entries:tree.entries.length,uniqueSongs:tree.uniqueSongs||0,
         duplicateReferences:tree.duplicateReferences||0,truncated:tree.truncated,
         workspaceSongs:workspaceOrder().length,knownSourceLists:lnSources.size,lastOpen:Date.now()
@@ -4225,4 +4262,4 @@ let raf=0, sched=()=>raf||(raf=requestAnimationFrame(()=> {
   })
 })();
 
-//# sourceURL=suno-tweaks-v63-staggered-bracket-duplicate-arrows.js
+//# sourceURL=suno-tweaks-v64-merged-duplicate-arrow-junctions.js
