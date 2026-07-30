@@ -1,5 +1,5 @@
 /**
- * Suno Tweaks v67 — lean release architecture
+ * Suno Tweaks v71 — Carousel metadata, native typography and alignment
  *
  * Loaded by the persistent local-file bookmarklet. The script keeps the accepted
  * layout, playlist, title-edit and title-expansion behaviour while adding a compact
@@ -17,6 +17,8 @@
  * - The ancestry popup expands to the viewport, then scales to 66%, then scrolls.
  * - Repeated ancestors remain fully visible; arrows to the same target merge into a shared yellow trunk with hollow junction circles.
  * - The player time follows the progress thumb and can be edited to seek precisely.
+ * - Every song-title hover opens the full black title bar, even when the visible title fits.
+ * - Profile, View All and carousel song tiles show their creation date and duration from cached or fetched clip metadata.
  *
  * Runtime controllers use stable, non-versioned window keys so future updates do
  * not need growing compatibility lists. Heavy diagnostics live in separate helpers.
@@ -71,6 +73,12 @@ button[aria-label="Playing"][class*="rounded-full"][class*="bg-background"],butt
 [data-sc=txt] a[href^="/song/"]:hover{text-decoration:underline!important}
 #suno-song-title-exact-overlay{position:fixed!important;display:block!important;width:max-content!important;height:auto!important;max-height:none!important;box-sizing:border-box!important;margin:0!important;padding:0!important;white-space:normal!important;overflow:visible!important;text-overflow:clip!important;overflow-wrap:anywhere!important;background:#000!important;border-radius:2px!important;text-decoration:none!important;cursor:pointer!important;z-index:2147483647!important}
 [data-sc=txt] [class*=clip-title-wrapper],[data-sc=txt] .flex.items-center.gap-2{width:${W}px!important;max-width:${W}px!important;min-width:0!important;overflow:hidden!important}
+.suno-card-action-line,.suno-card-creator-line{display:flex!important;align-items:center!important;min-width:0!important;width:100%!important;max-width:100%!important;box-sizing:border-box!important}
+.suno-card-date,.suno-card-duration{display:inline-flex!important;align-items:center!important;flex:0 0 auto!important;white-space:nowrap!important;font-family:inherit!important;font-size:inherit!important;font-style:inherit!important;font-weight:inherit!important;line-height:inherit!important;letter-spacing:inherit!important;color:inherit!important;font-variant-numeric:inherit!important}
+.suno-card-date{margin-left:auto!important;padding-left:6px!important;text-align:right!important}
+.suno-card-duration{margin-left:auto!important;padding-left:6px!important;text-align:right!important}
+.suno-card-generated-creator{display:flex!important;align-items:center!important;width:100%!important;min-width:0!important;box-sizing:border-box!important;color:inherit!important}
+.suno-card-generated-creator>a{min-width:0!important;overflow:hidden!important;text-overflow:ellipsis!important;white-space:nowrap!important;color:inherit!important;text-decoration:none!important}
 [data-sc=menu]{position:absolute!important;top:8px!important;right:8px!important;z-index:20!important;opacity:0!important;transition:opacity .12s ease!important}
 [data-sc=row]:hover [data-sc=menu]{opacity:1!important}
 [data-sc=row] [class*=css-8rxof8],[data-sc=row] [class*=e1rxirk01]{font-size:12px!important;opacity:.65!important;max-width:${W}px!important;overflow:hidden!important}
@@ -1147,6 +1155,349 @@ function playlistLikes() {
     plLoadResourceData()
   }
   // ---------------------------------------------------------------------------
+  // Creation date and duration on profile song thumbnails
+  // ---------------------------------------------------------------------------
+  // Most cards expose their complete clip object through React props or embedded
+  // page data. Those objects are scanned first and stored in the existing lineage
+  // metadata cache. Only IDs still missing a date or duration are fetched in small
+  // batches through Suno's normal get_songs_by_ids endpoint.
+  const CARD_METADATA_CONTROLLER_KEY='__sunoProfileCardMetadata';
+  const cardMetadataState={requested:new Set(),request:null,stopped:false};
+
+  clearControllers(CARD_METADATA_CONTROLLER_KEY,/^__sunoProfileCardMetadataV\d+$/,controller=>controller?.stop?.());
+  window[CARD_METADATA_CONTROLLER_KEY]={
+    requested:cardMetadataState.requested,
+    stop:()=>{cardMetadataState.stopped=true;}
+  };
+
+  function cardMetadataNativeTileRoot(link,root) {
+    if(!link||!root||!root.contains(link))return null;
+
+    // View All uses a native card without .clip-row/data-sc markers. Walk upward
+    // until one compact ancestor owns exactly one song title, one artwork image and
+    // the native play/like/comment controls. The single-song restriction prevents
+    // accidentally selecting the complete grid or section.
+    let node=link;
+    for(let depth=0;node&&node!==root&&depth<10;depth++,node=node.parentElement) {
+      const songIds=new Set($('a[href^="/song/"]',node).map(candidate=>
+        lnNorm((candidate.getAttribute('href')||'').match(/\/song\/([0-9a-f-]{36})/i)?.[1])
+      ).filter(Boolean));
+      if(songIds.size!==1)continue;
+      if(!node.querySelector('img'))continue;
+
+      const hasPlay=!!plPlaySpan(node);
+      const hasLike=!!node.querySelector('[data-liked]');
+      const hasComments=!!node.querySelector('a[href*="show_comments=true"]');
+      if(hasPlay&&(hasLike||hasComments))return node;
+    }
+    return null;
+  }
+
+  function cardMetadataPageRoot() {
+    const profile=profileMain();
+    if(profile)return profile;
+
+    // The dedicated View All route can omit the profile hero used by profileMain().
+    // Restrict the fallback to /@handle pages so home, search and discovery tiles
+    // are not modified accidentally.
+    const main=document.getElementById('main-container');
+    return main&&/^\/@[^/?#]+/.test(location.pathname)?main:null;
+  }
+
+  function cardMetadataRows() {
+    const root=cardMetadataPageRoot();
+    if(!root)return [];
+
+    const rows=$('[data-sc="row"]',root).filter(row=>
+      row.querySelector('a[href^="/song/"]')
+    );
+
+    // Add native View All cards. Their outer wrapper is intentionally tagged only
+    // for this metadata feature; the existing layout code remains in full control.
+    $('a[href^="/song/"]',root).forEach(link=> {
+      // Include native View All and carousel cards. Only the fixed bottom player is
+      // excluded; carousel slides are valid metadata targets for this feature.
+      if(link.querySelector('img')||link.closest('[data-playbar="true"]'))return;
+      const row=cardMetadataNativeTileRoot(link,root);
+      if(!row||rows.includes(row))return;
+      row.dataset.sunoCardMetadataRoot='1';
+      rows.push(row);
+    });
+
+    return rows;
+  }
+
+  function cardMetadataId(row) {
+    return lnRowId(row)||lnNorm(songId(row));
+  }
+
+  function cardMetadataTextHost(row) {
+    const marked=row.querySelector('[data-sc="txt"]');
+    if(marked)return marked;
+
+    const titleLink=$('a[href^="/song/"]',row).find(link=>
+      !link.querySelector('img')&&!/show_comments=true/i.test(link.getAttribute('href')||'')
+    );
+    if(!titleLink)return null;
+
+    // On View All cards the artwork and metadata are the two direct children of the
+    // card wrapper. Return the top-level child containing the title, creator and
+    // counters instead of the narrow clip-title-wrapper itself.
+    let child=titleLink;
+    while(child.parentElement&&child.parentElement!==row)child=child.parentElement;
+    if(child.parentElement===row&&!child.querySelector('img'))return child;
+
+    return titleLink.closest('div');
+  }
+
+  function cardMetadataTopLevelChild(node,host) {
+    if(!node||!host||!host.contains(node))return null;
+    let current=node;
+    while(current.parentElement&&current.parentElement!==host)current=current.parentElement;
+    return current.parentElement===host?current:null;
+  }
+
+  function cardMetadataCommonAncestor(nodes,boundary) {
+    nodes=nodes.filter(node=>node&&boundary?.contains(node));
+    if(nodes.length<2)return null;
+
+    let candidate=nodes[0];
+    while(candidate&&candidate!==boundary.parentElement) {
+      if(nodes.every(node=>candidate.contains(node)))return candidate;
+      candidate=candidate.parentElement;
+    }
+    return null;
+  }
+
+  function cardMetadataActionLine(row,host) {
+    const play=plPlaySpan(row);
+    const liked=row.querySelector(
+      '[data-liked],button[aria-label*="like" i]'
+    );
+    const comments=row.querySelector(
+      'a[href*="show_comments=true"],button[aria-label*="comment" i],a[aria-label*="comment" i]'
+    );
+
+    // Native View All cards wrap each count in its own button. Use the lowest
+    // common ancestor of the available controls so the date is appended after the
+    // complete play/like/comment group, not inside the play button.
+    const shared=cardMetadataCommonAncestor([play,liked,comments],host);
+    if(shared&&shared!==host)return shared;
+
+    if(play&&host?.contains(play)) {
+      // Older profile layouts may expose only a recognisable play icon. Prefer the
+      // first compact ancestor with multiple controls before falling back to the
+      // immediate parent used by the legacy layout.
+      let node=play;
+      while(node&&node!==host) {
+        const controls=node.querySelectorAll?.('button,a[href*="show_comments=true"]')?.length||0;
+        if(controls>=2)return node;
+        node=node.parentElement;
+      }
+      return play.parentElement;
+    }
+
+    // Proxy cards use a text-only count line, while other Suno layouts may expose
+    // accessible labels instead of the older play-count SVG path.
+    const labelled=liked||comments;
+    if(labelled&&host?.contains(labelled))return labelled.parentElement;
+
+    const candidates=[...(host?.querySelectorAll('div,span')||[])];
+    return candidates.find(node=>node.children.length<=4&&/[▶▷].*[♡♥]/.test(node.textContent||''))||null;
+  }
+
+  function cardMetadataCreatorLine(row,host,actionLine) {
+    const creator=[...(host?.querySelectorAll('a[href]')||[])].find(link=> {
+      const href=link.getAttribute('href')||'';
+      return !href.startsWith('/song/')&&(
+        href.startsWith('/@')||/\/(?:user|artist|profile)\//i.test(href)
+      );
+    });
+    if(creator)return creator.parentElement;
+
+    const actionTop=cardMetadataTopLevelChild(actionLine,host);
+    const titleLink=host?.querySelector('a[href^="/song/"]');
+    const titleTop=cardMetadataTopLevelChild(titleLink,host);
+    const previous=actionTop?.previousElementSibling;
+    if(previous&&previous!==titleTop&&!previous.querySelector?.('a[href^="/song/"]'))return previous;
+
+    // Pinned proxies and carousel cards often omit the creator row entirely. On a
+    // profile page the owner is unambiguous, so generate the missing row for every
+    // such card and place it immediately above the action/count line. This gives
+    // duration the same stable baseline used by normal View All cards.
+    if(host) {
+      const profileHandle=handle();
+      if(!profileHandle)return null;
+      let generated=host.querySelector('[data-suno-card-generated-creator="1"]');
+      if(!generated) {
+        generated=document.createElement('div');
+        generated.className='suno-card-generated-creator';
+        generated.dataset.sunoCardGeneratedCreator='1';
+        const link=document.createElement('a');
+        link.href=`/@${profileHandle}`;
+        link.textContent=`@${profileHandle}`;
+        generated.appendChild(link);
+        if(actionTop)host.insertBefore(generated,actionTop);
+        else host.appendChild(generated);
+      }
+      return generated;
+    }
+    return null;
+  }
+
+  function cardMetadataDate(timestamp) {
+    timestamp=Number(timestamp||0);
+    if(!Number.isFinite(timestamp)||timestamp<=0)return '';
+    const date=new Date(timestamp);
+    return Number.isNaN(date.getTime())?'':date.toISOString().slice(0,10);
+  }
+
+  function cardMetadataSetText(line,selector,className,text,title) {
+    let label=line?.querySelector(selector);
+    if(!line||!text) {
+      label?.remove();
+      return;
+    }
+    if(!label) {
+      label=document.createElement('span');
+      label.className=className;
+      line.appendChild(label);
+    }
+    if(label.textContent!==text)label.textContent=text;
+    label.title=title||text;
+  }
+
+  // Match Suno's own counter typography exactly instead of approximating it in
+  // CSS. CSS-module class names differ between View All and carousel cards, while
+  // computed font properties remain reliable across both layouts.
+  function cardMetadataCopyTypography(label,reference) {
+    if(!label||!reference||typeof getComputedStyle!=='function')return;
+    const computed=getComputedStyle(reference);
+    for(const property of [
+      'font-family','font-size','font-style','font-weight','line-height',
+      'letter-spacing','font-variant-numeric','color'
+    ]) {
+      const value=computed.getPropertyValue(property);
+      if(value)label.style.setProperty(property,value,'important');
+    }
+  }
+
+  function cardMetadataRender() {
+    const rows=cardMetadataRows();
+    for(const row of rows) {
+      const id=cardMetadataId(row);
+      if(!id)continue;
+
+      // Reuse the existing bounded React scanner so metadata already mounted with
+      // the card is learned without a network request.
+      lnRememberRow(row);
+      lnScanRow(row);
+
+      const info=lnSongInfo.get(id)||{};
+      const host=cardMetadataTextHost(row);
+      if(!host)continue;
+
+      const actionLine=cardMetadataActionLine(row,host);
+      if(actionLine) {
+        actionLine.classList.add('suno-card-action-line');
+        const date=cardMetadataDate(info.createdAt);
+        cardMetadataSetText(
+          actionLine,'[data-suno-card-date="1"]','suno-card-date',date,
+          date?`Created ${date}`:''
+        );
+        const label=actionLine.querySelector('.suno-card-date');
+        if(label) {
+          label.dataset.sunoCardDate='1';
+          cardMetadataCopyTypography(label,plPlaySpan(row)||actionLine.firstElementChild);
+        }
+      }
+
+      const creatorLine=cardMetadataCreatorLine(row,host,actionLine);
+      if(creatorLine) {
+        creatorLine.classList.add('suno-card-creator-line');
+        const duration=lnDuration(info.duration);
+        const formatted=duration>0?seekFormatTime(duration):'';
+        cardMetadataSetText(
+          creatorLine,'[data-suno-card-duration="1"]','suno-card-duration',formatted,
+          formatted?`Duration ${formatted}`:''
+        );
+        const label=creatorLine.querySelector('.suno-card-duration');
+        if(label) {
+          label.dataset.sunoCardDuration='1';
+          const creatorReference=creatorLine.querySelector('a[href]')||plPlaySpan(row)||actionLine;
+          cardMetadataCopyTypography(label,creatorReference);
+          if(creatorLine.dataset.sunoCardGeneratedCreator==='1') {
+            cardMetadataCopyTypography(creatorLine,plPlaySpan(row)||actionLine);
+            const creatorLink=creatorLine.querySelector('a[href]');
+            if(creatorLink)cardMetadataCopyTypography(creatorLink,plPlaySpan(row)||actionLine);
+          }
+        }
+      }
+    }
+    return rows;
+  }
+
+  async function cardMetadataFetchUrl(url) {
+    const headers={accept:'application/json'};
+    const token=await creditGetClerkToken();
+    if(token)headers.authorization=`Bearer ${token}`;
+    let response=await fetch(url,{credentials:'include',cache:'default',headers});
+    if(response.status===401&&!headers.authorization) {
+      const retryToken=await creditGetClerkToken();
+      if(retryToken)response=await fetch(url,{
+        credentials:'include',cache:'default',
+        headers:{accept:'application/json',authorization:`Bearer ${retryToken}`}
+      });
+    }
+    if(!response.ok)throw new Error(`Card metadata request failed: ${response.status}`);
+    const contentType=response.headers.get('content-type')||'';
+    return contentType.includes('json')?response.json():response.text();
+  }
+
+  async function cardMetadataFetchBatch(ids) {
+    ids=[...new Set(ids.map(lnNorm).filter(Boolean))];
+    if(!ids.length)return;
+    const buildUrl=mode=> {
+      const url=new URL(`${STUDIO_API_BASE}/api/clips/get_songs_by_ids`);
+      if(mode==='repeated')ids.forEach(id=>url.searchParams.append('ids',id));
+      else url.searchParams.set('ids',ids.join(','));
+      return url.href;
+    };
+
+    let payload;
+    try { payload=await cardMetadataFetchUrl(buildUrl('repeated')); }
+    catch(firstError) { payload=await cardMetadataFetchUrl(buildUrl('comma')); }
+    workspaceIndexPayload(payload,{
+      source:'profile-card-metadata',allowOrder:false,
+      context:'profile get_songs_by_ids',max:50000
+    });
+  }
+
+  function cardMetadataRefresh() {
+    if(cardMetadataState.stopped)return;
+    const rows=cardMetadataRender();
+    if(cardMetadataState.request||!rows.length)return;
+
+    const missing=[];
+    for(const row of rows) {
+      const id=cardMetadataId(row);
+      const info=lnSongInfo.get(id)||{};
+      if(id&&!cardMetadataState.requested.has(id)&&(!info.createdAt||!lnDuration(info.duration)))missing.push(id);
+    }
+    const chunk=[...new Set(missing)].slice(0,WORKSPACE_BATCH_SIZE);
+    if(!chunk.length)return;
+    chunk.forEach(id=>cardMetadataState.requested.add(id));
+
+    cardMetadataState.request=cardMetadataFetchBatch(chunk).catch(()=>{}).finally(()=> {
+      cardMetadataState.request=null;
+      cardMetadataRender();
+      if(cardMetadataRows().some(row=> {
+        const info=lnSongInfo.get(cardMetadataId(row))||{};
+        return !info.createdAt||!lnDuration(info.duration);
+      }))window.setTimeout(cardMetadataRefresh,180);
+    });
+  }
+  // ---------------------------------------------------------------------------
   // Multi-source relation store and proactive Create-workspace index
   // ---------------------------------------------------------------------------
   // The relation graph is intentionally separate from the removed background-colour
@@ -1539,6 +1890,16 @@ function playlistLikes() {
     return Number.isFinite(parsed)?parsed:0;
   }
 
+  function lnDuration(value) {
+    if(value===undefined||value===null||value==='')return 0;
+    if(typeof value==='string'&&value.includes(':')) {
+      const parsed=seekParseTime(value);
+      return Number.isFinite(parsed)&&parsed>0?parsed:0;
+    }
+    const number=Number(value);
+    return Number.isFinite(number)&&number>0?number:0;
+  }
+
   function lnRememberInfo(id, info={}) {
     id=lnNorm(id);
     if(!id)return false;
@@ -1547,11 +1908,13 @@ function playlistLikes() {
     const title=String(info.title||previous.title||'').replace(/\s+/g, ' ').trim();
     const image=String(info.image||previous.image||'').trim();
     const createdAt=lnTimestamp(info.createdAt||info.created_at||previous.createdAt||0);
+    const duration=lnDuration(info.duration??info.duration_seconds??previous.duration??0);
     const workspaceId=lnNorm(info.workspaceId||info.workspace_id||info.projectId||info.project_id||previous.workspaceId||'');
-    const next={title, image, createdAt, workspaceId};
+    const next={title, image, createdAt, duration, workspaceId};
 
     if(previous.title===next.title&&previous.image===next.image&&
-      Number(previous.createdAt||0)===next.createdAt&&String(previous.workspaceId||'')===next.workspaceId)return false;
+      Number(previous.createdAt||0)===next.createdAt&&Number(previous.duration||0)===next.duration&&
+      String(previous.workspaceId||'')===next.workspaceId)return false;
     lnSongInfo.set(id, next);
     if(!lnLoadingStore)lnSave();
     return true;
@@ -1568,6 +1931,8 @@ function playlistLikes() {
         metadata.image_url||metadata.image_large_url||'',
       createdAt:object.created_at||object.createdAt||object.created_ts||object.created_time||
         object.timestamp||metadata.created_at||metadata.createdAt||metadata.created_ts||metadata.timestamp||0,
+      duration:object.duration||object.duration_seconds||object.durationSeconds||
+        metadata.duration||metadata.duration_seconds||metadata.durationSeconds||0,
       workspaceId:object.project_id||object.workspace_id||object.project_uuid||object.projectId||
         object.workspaceId||metadata.project_id||metadata.workspace_id||metadata.project_uuid||
         metadata.projectId||metadata.workspaceId||''
@@ -1639,6 +2004,7 @@ function playlistLikes() {
             title:String(info?.title||''),
             image:String(info?.image||''),
             createdAt:Number(info?.createdAt||0),
+            duration:Number(info?.duration||0),
             workspaceId:String(info?.workspaceId||'')
           };
         }
@@ -3865,67 +4231,24 @@ function createTitleEdit() {
     })
   }
   // ---------------------------------------------------------------------------
-  // Exact-position expansion for truncated song titles
+  // Exact-position full-title bar for every song title
   // ---------------------------------------------------------------------------
-  // Suno clips the text through the surrounding .clip-title-wrapper rather than
-  // through the anchor itself. Measuring only the link therefore misses titles
-  // whose link retains its natural width. The implementation below measures the
-  // full text against the wrapper width and, on hover, places a clickable copy at
-  // exactly the same viewport coordinates as the original title. The first line
-  // uses the same font, line height and starting position, so the title appears to
-  // expand in place instead of showing a detached tooltip above the card.
+  // The black title bar is intentionally available for every song, not only for
+  // visibly truncated titles. On hover or keyboard focus it places a clickable
+  // copy at the exact viewport coordinates of the original title. The first line
+  // retains the source typography and starting position, so the title expands in
+  // place instead of appearing as a detached browser tooltip.
   const TITLE_SELECTOR = '[class*="clip-title-wrapper"] > a[href^="/song/"]';
   const TITLE_OVERLAY_ID = 'suno-song-title-exact-overlay';
   const TITLE_HANDLER_KEY = '__sunoSongTitleExactOverlayHandlers';
   const OLD_TITLE_EXPAND_HANDLER_KEY = '__sunoSongTitleExpansionHandlers';
   const OLD_TITLE_TOOLTIP_HANDLER_KEY = '__sunoSongTitleTooltipHandlers';
-  const titleMeasureCanvas = document.createElement('canvas');
-  const titleMeasureContext = titleMeasureCanvas.getContext('2d');
-
   function normalizeSongTitle(value) {
     return String(value || '').replace(/\s+/g, ' ').trim();
   }
 
   function titleWrapperFor(link) {
     return link.closest('[class*="clip-title-wrapper"]');
-  }
-
-  function measuredTitleWidth(link, title) {
-    const style = getComputedStyle(link);
-
-    if (!titleMeasureContext) return 0;
-
-    titleMeasureContext.font = style.font ||
-      `${style.fontStyle} ${style.fontWeight} ${style.fontSize} ${style.fontFamily}`;
-
-    let width = titleMeasureContext.measureText(title).width;
-    const letterSpacing = parseFloat(style.letterSpacing);
-
-    if (Number.isFinite(letterSpacing) && title.length > 1) {
-      width += letterSpacing * (title.length - 1);
-    }
-
-    return width;
-  }
-
-  function availableTitleWidth(link, wrapper) {
-    const wrapperRect = wrapper?.getBoundingClientRect();
-    const wrapperWidth = wrapper?.clientWidth || wrapperRect?.width || 0;
-
-    if (wrapperWidth > 0) return wrapperWidth;
-
-    const parentRect = link.parentElement?.getBoundingClientRect();
-    return link.clientWidth || parentRect?.width || link.getBoundingClientRect().width || 0;
-  }
-
-  function isSongTitleTruncated(link, wrapper, fullTitle) {
-    const availableWidth = availableTitleWidth(link, wrapper);
-    if (!availableWidth) return false;
-
-    if (wrapper && wrapper.scrollWidth > wrapper.clientWidth + 1) return true;
-    if (link.scrollWidth > availableWidth + 1) return true;
-
-    return measuredTitleWidth(link, fullTitle) > availableWidth + 1;
   }
 
   function clearIncorrectTitleMarkers() {
@@ -3953,11 +4276,9 @@ function createTitleEdit() {
       link.dataset.sunoFullTitle = fullTitle;
       link.removeAttribute('title');
 
-      if (isSongTitleTruncated(link, wrapper, fullTitle)) {
-        link.dataset.sunoTitleExpand = '1';
-      } else {
-        delete link.dataset.sunoTitleExpand;
-      }
+      // The title bar is always enabled. Keeping the marker explicit lets the
+      // delegated event handlers remain narrow and avoids reacting to unrelated links.
+      link.dataset.sunoTitleExpand = '1';
     });
   }
 
@@ -4174,6 +4495,7 @@ function run() {
       layoutCards();
       layoutNewRows()
     }
+    cardMetadataRefresh();
     clearPlayDiscs();
     clearOverlayDiscs();
     playbar();
@@ -4204,4 +4526,4 @@ let raf=0, sched=()=>raf||(raf=requestAnimationFrame(()=> {
   })
 })();
 
-//# sourceURL=suno-tweaks-v67-lean-release-architecture.js
+//# sourceURL=suno-tweaks-v71-carousel-metadata-typography.js
