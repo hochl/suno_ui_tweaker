@@ -1,5 +1,5 @@
 /**
- * Suno Tweaks v71 — Carousel metadata, native typography and alignment
+ * Suno Tweaks v72 — Safe tracker blocking integrated
  *
  * Loaded by the persistent local-file bookmarklet. The script keeps the accepted
  * layout, playlist, title-edit and title-expansion behaviour while adding a compact
@@ -19,6 +19,7 @@
  * - The player time follows the progress thumb and can be edited to seek precisely.
  * - Every song-title hover opens the full black title bar, even when the visible title fits.
  * - Profile, View All and carousel song tiles show their creation date and duration from cached or fetched clip metadata.
+ * - Safe tracker and telemetry domains verified in console testing are blocked automatically.
  *
  * Runtime controllers use stable, non-versioned window keys so future updates do
  * not need growing compatibility lists. Heavy diagnostics live in separate helpers.
@@ -46,6 +47,322 @@
       try { delete window[key]; } catch(error) {}
     }
   }
+
+  const TRACKER_BLOCKER_KEY = "__sunoTrackerBlockerController";
+
+  // ---------------------------------------------------------------------------
+  // Safe tracker blocking
+  // ---------------------------------------------------------------------------
+  // These domains were validated in console testing as non-essential telemetry,
+  // analytics, advertising or attribution endpoints. Blocking begins after the
+  // tweak script is installed. A small runtime API remains available for manual
+  // inspection: window.__sunoTrackerBlockerController.summary(), report(), stop().
+  function installTrackerBlocker() {
+    try { window[TRACKER_BLOCKER_KEY]?.stop?.(); } catch(error) {}
+
+    const BLOCKED_DOMAINS = [
+      "browser-intake-datadoghq.com",
+      "static.cloudflareinsights.com",
+      "cloudflareinsights.com",
+      "analytics.tiktok.com",
+      "bat.bing.com",
+      "bat.bing.net",
+      "h.clarity.ms",
+      "scripts.clarity.ms",
+      "www.clarity.ms",
+      "analytics.twitter.com",
+      "static.ads-twitter.com",
+      "google-analytics.com",
+      "analytics.google.com",
+      "googletagmanager.com",
+      "doubleclick.net",
+      "connect.facebook.net",
+      "www.facebook.com",
+      "sdk-api-v1.singular.net",
+      "web-sdk-cdn.singular.net",
+      "d2hrivdxn8ekm8.cloudfront.net",
+      "segment.prod.bidr.io",
+      "tte-prod.telemetry.vaultdcr.com",
+      "bzrcdn.openai.com",
+      "bzr.openai.com"
+    ];
+
+    const state = {
+      installedAt: new Date().toISOString(),
+      enabled: true,
+      restored: false,
+      maxEvents: 600,
+      removedExisting: 0,
+      counts: new Map(),
+      events: []
+    };
+
+    const originals = {
+      fetch: window.fetch,
+      xhrOpen: XMLHttpRequest.prototype.open,
+      xhrSend: XMLHttpRequest.prototype.send,
+      sendBeacon: typeof navigator.sendBeacon === "function" ? navigator.sendBeacon : null,
+      appendChild: Node.prototype.appendChild,
+      insertBefore: Node.prototype.insertBefore,
+      replaceChild: Node.prototype.replaceChild,
+      setAttribute: Element.prototype.setAttribute,
+      propertyDescriptors: []
+    };
+
+    const XHR_BLOCKED = Symbol("sunoTrackerBlockedXhr");
+    const XHR_URL = Symbol("sunoTrackerBlockedXhrUrl");
+    let observer = null;
+    let beaconPatched = false;
+
+    function normaliseHostname(hostname) {
+      return String(hostname||"").trim().replace(/^\.+|\.+$/g, "").toLowerCase();
+    }
+    function domainMatches(hostname, rule) {
+      hostname = normaliseHostname(hostname);
+      rule = normaliseHostname(rule);
+      return hostname === rule || hostname.endsWith("." + rule);
+    }
+    function parseUrl(value) {
+      try {
+        if(value instanceof Request) return new URL(value.url, location.href);
+        if(value instanceof URL) return value;
+        return new URL(String(value||""), location.href);
+      } catch(error) {
+        return null;
+      }
+    }
+    function matchUrl(value) {
+      if(!state.enabled) return null;
+      const url = parseUrl(value);
+      if(!url || !/^https?:$/.test(url.protocol)) return null;
+      const rule = BLOCKED_DOMAINS.find(domain=>domainMatches(url.hostname, domain));
+      return rule ? { url, rule } : null;
+    }
+    function redactUrl(value) {
+      const url = parseUrl(value);
+      if(!url) return String(value||"");
+      for(const key of [...url.searchParams.keys()]) {
+        url.searchParams.set(key, "<redacted>");
+      }
+      url.hash = "";
+      return url.toString();
+    }
+    function record(kind, value, extra={}) {
+      const match = matchUrl(value);
+      const url = match?.url || parseUrl(value);
+      const domain = normaliseHostname(url?.hostname || "unknown");
+      const countKey = `${kind}:${domain}`;
+      state.counts.set(countKey, (state.counts.get(countKey)||0) + 1);
+      state.events.push({
+        at: new Date().toISOString(),
+        kind,
+        domain,
+        url: redactUrl(value),
+        ...extra
+      });
+      if(state.events.length > state.maxEvents) {
+        state.events.splice(0, state.events.length - state.maxEvents);
+      }
+    }
+    function blockedFetchResponse() {
+      return new Response(null, {
+        status: 204,
+        statusText: "Blocked by Suno Tweaks tracker blocker",
+        headers: { "X-Suno-Tracker-Block": "1" }
+      });
+    }
+    function resourceUrl(element) {
+      if(!(element instanceof Element)) return "";
+      const tag = element.tagName;
+      if(tag === "SCRIPT" || tag === "IMG" || tag === "IFRAME" || tag === "SOURCE" || tag === "AUDIO" || tag === "VIDEO") {
+        return element.getAttribute("src") || element.src || "";
+      }
+      if(tag === "LINK") return element.getAttribute("href") || element.href || "";
+      return "";
+    }
+    function blockResourceElement(element, source) {
+      const value = resourceUrl(element);
+      const match = matchUrl(value);
+      if(!match) return false;
+      record("dom-resource", match.url, {
+        tag: element.tagName.toLowerCase(),
+        source
+      });
+      try {
+        if("src" in element) element.removeAttribute("src");
+        if("href" in element && element.tagName === "LINK") element.removeAttribute("href");
+        if(element.isConnected) element.remove();
+      } catch(error) {}
+      return true;
+    }
+    function sanitiseTree(node, source) {
+      if(!(node instanceof Node)) return true;
+      if(node instanceof Element && blockResourceElement(node, source)) return false;
+      if(node.querySelectorAll) {
+        for(const element of node.querySelectorAll("script[src],img[src],iframe[src],link[href],source[src],audio[src],video[src]")) {
+          blockResourceElement(element, source);
+        }
+      }
+      return true;
+    }
+    function patchUrlProperty(prototype, property) {
+      if(!prototype) return;
+      const descriptor = Object.getOwnPropertyDescriptor(prototype, property);
+      if(!descriptor?.configurable || typeof descriptor.set !== "function") return;
+      originals.propertyDescriptors.push({ prototype, property, descriptor });
+      Object.defineProperty(prototype, property, {
+        ...descriptor,
+        set(value) {
+          if(matchUrl(value)) {
+            record("property", value, {
+              tag: this.tagName?.toLowerCase() || "",
+              property
+            });
+            return;
+          }
+          return descriptor.set.call(this, value);
+        }
+      });
+    }
+    function countsObject() {
+      return Object.fromEntries([...state.counts.entries()].sort((a,b)=>b[1]-a[1]));
+    }
+    function report() {
+      return {
+        installedAt: state.installedAt,
+        enabled: state.enabled,
+        blockedDomains: [...BLOCKED_DOMAINS],
+        removedExisting: state.removedExisting,
+        counts: countsObject(),
+        events: [...state.events]
+      };
+    }
+    function summary() {
+      const result = {
+        enabled: state.enabled,
+        removedExisting: state.removedExisting,
+        blockedEvents: state.events.length,
+        counts: countsObject()
+      };
+      try {
+        console.table(Object.entries(result.counts).map(([typeAndDomain, count])=>({ typeAndDomain, count })));
+      } catch(error) {}
+      console.log("[Suno Tweaks tracker blocker]", result);
+      return result;
+    }
+    function stop() {
+      if(state.restored) return;
+      state.restored = true;
+      state.enabled = false;
+      observer?.disconnect();
+      observer = null;
+      window.fetch = originals.fetch;
+      XMLHttpRequest.prototype.open = originals.xhrOpen;
+      XMLHttpRequest.prototype.send = originals.xhrSend;
+      if(beaconPatched && originals.sendBeacon) {
+        try { navigator.sendBeacon = originals.sendBeacon; } catch(error) {}
+      }
+      Node.prototype.appendChild = originals.appendChild;
+      Node.prototype.insertBefore = originals.insertBefore;
+      Node.prototype.replaceChild = originals.replaceChild;
+      Element.prototype.setAttribute = originals.setAttribute;
+      for(const item of originals.propertyDescriptors) {
+        try { Object.defineProperty(item.prototype, item.property, item.descriptor); } catch(error) {}
+      }
+    }
+
+    window.fetch = function sunoTrackerBlockedFetch(input, init) {
+      const match = matchUrl(input);
+      if(!match) return originals.fetch.call(this, input, init);
+      record("fetch", match.url, {
+        method: String(init?.method || (input instanceof Request ? input.method : "GET")).toUpperCase()
+      });
+      return Promise.resolve(blockedFetchResponse());
+    };
+    XMLHttpRequest.prototype.open = function sunoTrackerBlockedXhrOpen(method, url, ...rest) {
+      const match = matchUrl(url);
+      this[XHR_BLOCKED] = Boolean(match);
+      this[XHR_URL] = match?.url?.toString() || String(url||"");
+      return originals.xhrOpen.call(this, method, url, ...rest);
+    };
+    XMLHttpRequest.prototype.send = function sunoTrackerBlockedXhrSend(body) {
+      if(!this[XHR_BLOCKED]) return originals.xhrSend.call(this, body);
+      record("xhr", this[XHR_URL]);
+      queueMicrotask(()=> {
+        try { this.abort(); } catch(error) {}
+      });
+      return undefined;
+    };
+    if(originals.sendBeacon) {
+      try {
+        navigator.sendBeacon = function sunoTrackerBlockedBeacon(url, data) {
+          const match = matchUrl(url);
+          if(!match) return originals.sendBeacon.call(navigator, url, data);
+          record("beacon", match.url, {
+            bytes: typeof data === "string" ? data.length : Number(data?.size || 0)
+          });
+          return true;
+        };
+        beaconPatched = true;
+      } catch(error) {}
+    }
+    Node.prototype.appendChild = function sunoTrackerBlockedAppendChild(node) {
+      if(!sanitiseTree(node, "appendChild")) return node;
+      return originals.appendChild.call(this, node);
+    };
+    Node.prototype.insertBefore = function sunoTrackerBlockedInsertBefore(node, reference) {
+      if(!sanitiseTree(node, "insertBefore")) return node;
+      return originals.insertBefore.call(this, node, reference);
+    };
+    Node.prototype.replaceChild = function sunoTrackerBlockedReplaceChild(node, oldNode) {
+      if(!sanitiseTree(node, "replaceChild")) return oldNode;
+      return originals.replaceChild.call(this, node, oldNode);
+    };
+    Element.prototype.setAttribute = function sunoTrackerBlockedSetAttribute(name, value) {
+      const lowerName = String(name||"").toLowerCase();
+      if((lowerName === "src" || lowerName === "href") && matchUrl(value)) {
+        record("attribute", value, {
+          tag: this.tagName?.toLowerCase() || "",
+          attribute: lowerName
+        });
+        return undefined;
+      }
+      return originals.setAttribute.call(this, name, value);
+    };
+
+    patchUrlProperty(window.HTMLScriptElement?.prototype, "src");
+    patchUrlProperty(window.HTMLImageElement?.prototype, "src");
+    patchUrlProperty(window.HTMLIFrameElement?.prototype, "src");
+    patchUrlProperty(window.HTMLLinkElement?.prototype, "href");
+    patchUrlProperty(window.HTMLSourceElement?.prototype, "src");
+    patchUrlProperty(window.HTMLMediaElement?.prototype, "src");
+
+    observer = new MutationObserver(records=> {
+      for(const mutation of records) {
+        for(const node of mutation.addedNodes) sanitiseTree(node, "mutation-observer");
+      }
+    });
+    observer.observe(document.documentElement, {
+      childList:true,
+      subtree:true
+    });
+
+    for(const element of document.querySelectorAll("script[src],img[src],iframe[src],link[href],source[src],audio[src],video[src]")) {
+      if(blockResourceElement(element, "existing-dom")) state.removedExisting++;
+    }
+
+    const api = {
+      blockedDomains: Object.freeze([...BLOCKED_DOMAINS]),
+      summary,
+      report,
+      pause() { state.enabled = false; },
+      resume() { state.enabled = true; },
+      stop
+    };
+    window[TRACKER_BLOCKER_KEY] = api;
+    return api;
+  }
+
   [OBS, "__sunoMergedLayoutTweaksObserver", "__sunoCarouselProxyUnifiedObserver"].forEach(k=> {
     try {
       window[k]?.disconnect()
@@ -4511,6 +4828,7 @@ let raf=0, sched=()=>raf||(raf=requestAnimationFrame(()=> {
     raf=0;
     run()
   }));
+  installTrackerBlocker();
   installSongTitleExpansion();
   installAncestryOverlay();
   installSelectedSongTint();
@@ -4526,4 +4844,4 @@ let raf=0, sched=()=>raf||(raf=requestAnimationFrame(()=> {
   })
 })();
 
-//# sourceURL=suno-tweaks-v71-carousel-metadata-typography.js
+//# sourceURL=suno-tweaks-v72-safe-tracker-blocking.js
