@@ -1,5 +1,5 @@
 /**
- * Suno Tweaks v65 — readable local script
+ * Suno Tweaks v67 — lean release architecture
  *
  * Loaded by the persistent local-file bookmarklet. The script keeps the accepted
  * layout, playlist, title-edit and title-expansion behaviour while adding a compact
@@ -18,12 +18,8 @@
  * - Repeated ancestors remain fully visible; arrows to the same target merge into a shared yellow trunk with hollow junction circles.
  * - The player time follows the progress thumb and can be edited to seek precisely.
  *
- * Debug objects:
- * - window.__sunoLocalScriptLoader     — loader status
- * - window.__sunoWorkspaceIndexV65     — workspace indexing status
- * - window.__sunoAncestryOverlayV65    — ancestry overlay status
- * - window.__sunoAncestryNavigationDiagnosticV65 — navigation event log
- * - window.__sunoCreditsV65        — exact credit balance and refresh status
+ * Runtime controllers use stable, non-versioned window keys so future updates do
+ * not need growing compatibility lists. Heavy diagnostics live in separate helpers.
  */
 
 (()=> {
@@ -37,6 +33,17 @@
       return String(s||"").replace(/\\"/g, '"').replace(/\\\\/g, "\\")
     }
   }, F=n=>Number(n||0).toLocaleString();
+
+  function clearControllers(stableKey, legacyPattern, cleanup=()=>{}) {
+    const keys=Object.getOwnPropertyNames(window).filter(key=>
+      key===stableKey||legacyPattern.test(key)
+    );
+    for(const key of new Set(keys)) {
+      const controller=window[key];
+      try { cleanup(controller,key); } catch(error) {}
+      try { delete window[key]; } catch(error) {}
+    }
+  }
   [OBS, "__sunoMergedLayoutTweaksObserver", "__sunoCarouselProxyUnifiedObserver"].forEach(k=> {
     try {
       window[k]?.disconnect()
@@ -154,14 +161,6 @@ li>[role="button"][aria-roledescription="sortable"] .clip-row .clip-image-contai
     let m=document.getElementById("main-container");
     return m&&(m.querySelector('p[aria-label^="@"]')||m.querySelector('[class*="ProfileV2Hero"]'))?m:null
   }
-  function profileContent() {
-    let m=profileMain(), sc=m?.firstElementChild;
-    if(!sc)return null;
-    return[...sc.children].find(e=> {
-      let c=String(e.className||"");
-      return c.includes("mx-auto")&&c.includes("max-w-")
-    })||null
-  }
   // Expand the profile and central content areas.
 function wide() {
     $('[data-suno-profile-main="1"]').forEach(e=>e.removeAttribute("data-suno-profile-main"));
@@ -240,8 +239,8 @@ function wide() {
   // ---------------------------------------------------------------------------
   // Editable player time above the progress thumb
   // ---------------------------------------------------------------------------
-  const EDITABLE_SEEK_KEY='__sunoEditableSeekTimeV65';
-  const editableSeekState={controls:new Set(),timer:0,lastError:''};
+  const EDITABLE_SEEK_KEY='__sunoEditableSeekTime';
+  const editableSeekState={controls:new Set(),timer:0};
 
   function seekParseTime(raw) {
     const value=String(raw||'').trim().replace(',', '.');
@@ -501,9 +500,9 @@ function wide() {
   }
 
   function installEditableSeekTime() {
-    const old=window[EDITABLE_SEEK_KEY]||window.__sunoEditableSeekTimeV64;
-    if(old?.timer)window.clearInterval(old.timer);
-    try { delete window.__sunoEditableSeekTimeV64; } catch(error) {}
+    clearControllers(EDITABLE_SEEK_KEY,/^__sunoEditableSeekTimeV\d+$/,controller=> {
+      if(controller?.timer)window.clearInterval(controller.timer);
+    });
     editableSeekState.timer=window.setInterval(()=> {
       for(const control of [...editableSeekState.controls]) {
         if(!seekUpdateControl(control))editableSeekState.controls.delete(control);
@@ -1163,9 +1162,9 @@ function playlistLikes() {
   const CREDIT_CACHE_KEY='__suno_exact_credit_balance_v64';
   const CREDIT_REFRESH_MS=60000;
   const CREDIT_API_URL=`${STUDIO_API_BASE}/api/billing/info/`;
+  const CREDIT_CONTROLLER_KEY='__sunoCredits';
 
-  const previousCreditController=window.__sunoCreditsV65||window.__sunoCreditsV61||window.__sunoCreditsV60||window.__sunoCreditsV59||window.__sunoCreditsV58||window.__sunoCreditsV57||window.__sunoCreditsV56||window.__sunoCreditsV55;
-  try { previousCreditController?.stop?.(); } catch(error) {}
+  clearControllers(CREDIT_CONTROLLER_KEY,/^__sunoCreditsV\d+$/,controller=>controller?.stop?.());
 
   const creditState={
     value:null,
@@ -1395,7 +1394,7 @@ function playlistLikes() {
   }
 
   function creditDebugState() {
-    window.__sunoCreditsV65={
+    window[CREDIT_CONTROLLER_KEY]={
       value:creditState.value,
       formatted:creditText(),
       lastUpdated:creditState.lastUpdated,
@@ -1456,7 +1455,6 @@ function playlistLikes() {
     lastReactScan:0,
     lastVisibleScan:0,
     reactScanScheduled:false,
-    fetchHookInstalled:false,
     feedController:null,
     feedControllerScore:0,
     feedPreloadPromise:null,
@@ -1649,29 +1647,11 @@ function playlistLikes() {
     }, 160);
   }
 
-  function lnSet(childId, sourceId, kind='derived', details={}) {
-    return lnAddSource(childId, sourceId, kind, details);
-  }
-
   function lnVal(object, metadata, key) {
     let value;
     try { value=metadata?.[key]; } catch(error) {}
     if(value!==undefined&&value!==null&&value!=='')return value;
     try { return object?.[key]; } catch(error) { return undefined; }
-  }
-
-  function lnFirst(value) {
-    if(Array.isArray(value)) {
-      for(const item of value) {
-        let id=lnNorm(item);
-        if(id)return id;
-        if(item&&typeof item==='object') {
-          id=lnNorm(item.id||item.clip_id||item.uuid);
-          if(id)return id;
-        }
-      }
-    }
-    return lnNorm(value);
   }
 
   function lnIds(value, output=[]) {
@@ -1772,60 +1752,6 @@ function playlistLikes() {
     return result;
   }
 
-  function lnPreferredSource(object) {
-    const metadata=object?.metadata&&typeof object.metadata==='object'?object.metadata:{};
-    const task=String(lnVal(object, metadata, 'task')||'').toLowerCase();
-    const type=String(lnVal(object, metadata, 'type')||lnVal(object, metadata, 'clip_type')||'').toLowerCase();
-    const get=key=>lnNorm(lnVal(object, metadata, key));
-    let source='';
-    let kind='derived';
-
-    if(task==='infill'||task==='fixed_infill') {
-      source=get('override_history_clip_id')||get('override_future_clip_id')||
-        lnFirst(lnVal(object, metadata, 'history'))||get('edited_clip_id');
-      kind='section';
-    } else if(task==='extend') {
-      source=lnFirst(lnVal(object, metadata, 'history'))||get('edited_clip_id')||get('continue_clip_id');
-      kind='extend';
-    } else if(type==='concat') {
-      source=lnFirst(lnVal(object, metadata, 'concat_history'))||get('edited_clip_id');
-      kind='stitch';
-    } else if(type==='edit_speed') {
-      source=get('speed_clip_id')||get('edited_clip_id');
-      kind='speed';
-    } else if(task==='cover') {
-      source=get('cover_clip_id')||get('edited_clip_id');
-      kind='cover';
-    } else if(type==='upsample'||task==='upsample') {
-      source=get('upsample_clip_id')||get('remaster_clip_id')||get('edited_clip_id');
-      kind='remaster';
-    } else if(type==='edit_v3_export') {
-      source=get('edited_clip_id');
-      kind='edit';
-    }
-
-    if(!source) {
-      for(const key of ['cover_clip_id','remix_clip_id','sample_clip_id','chop_sample_clip_id',
-        'source_clip_id','reference_clip_id','continue_clip_id','infill_clip_id',
-        'underpainting_clip_id','overpainting_clip_id','stem_from_id','speed_clip_id',
-        'upsample_clip_id','edited_clip_id']) {
-        source=get(key);
-        if(source) {
-          kind=key.replace(/_clip_id$/, '');
-          break;
-        }
-      }
-    }
-
-    if(!source) {
-      const roots=lnVal(object, metadata, 'clip_roots');
-      const list=Array.isArray(roots)?roots:Array.isArray(roots?.clips)?roots.clips:[];
-      source=lnFirst(list);
-      if(source)kind=String(roots?.clip_attribution_type||'root');
-    }
-    return {id:source, kind:kind||'derived'};
-  }
-
   function lnRecord(object) {
     if(!object||typeof object!=='object')return false;
     const id=lnNorm(object.id||object.clip_id||object.uuid);
@@ -1834,10 +1760,6 @@ function playlistLikes() {
     let changed=false;
     for(const source of lnSourcesFromObject(object)) {
       changed=lnAddSource(id, source.id, source.kind, source)||changed;
-    }
-    if(!lnSources.get(id)?.length) {
-      const preferred=lnPreferredSource(object);
-      if(preferred.id)changed=lnAddSource(id, preferred.id, preferred.kind)||changed;
     }
     return changed;
   }
@@ -1965,7 +1887,7 @@ function playlistLikes() {
         if(/(?:Cover|Remix|Sample|Extended?|Stemmed?|Remastered?)\s+(?:of|from)/i.test(text))break;
       }
       const match=text.match(/(Cover|Remix|Sample|Extended?|Stemmed?|Remastered?)/i);
-      if(match)lnSet(child, source, match[1].toLowerCase());
+      if(match)lnAddSource(child, source, match[1].toLowerCase());
     }
   }
 
@@ -2137,78 +2059,12 @@ function playlistLikes() {
     order.push(id);
   }
 
-  function workspaceOrientOrder(order) {
-    if(!Array.isArray(order)||order.length<2)return order||[];
-    const visible=[];
-    for(const row of $('[data-testid="clip-row"]')) {
-      const id=lnRowId(row);
-      const index=order.indexOf(id);
-      if(index<0)continue;
-      visible.push({index,top:row.getBoundingClientRect().top});
-    }
-    if(visible.length<2)return order;
-    visible.sort((a,b)=>a.top-b.top);
-    const first=visible[0];
-    const last=visible[visible.length-1];
-    return first.index<=last.index?order:[...order].reverse();
-  }
-
-  function workspaceOrderRecord() {
-    const records=[
-      {source:'network',order:workspaceState.networkOrder},
-      {source:'react',order:workspaceState.reactOrder},
-      {source:'dom',order:workspaceState.domOrder}
-    ];
-    records.sort((a,b)=>b.order.length-a.order.length);
-    const record=records[0]||{source:'',order:[]};
-    return {...record,order:workspaceOrientOrder(record.order)};
-  }
-
-  function workspaceOrder() {
-    return workspaceOrderRecord().order;
-  }
-
   function workspaceHasSong(id) {
     id=lnNorm(id);
     if(!id)return false;
     const info=lnSongInfo.get(id)||{};
     return Boolean(lnVisibleRow(id)||info.workspaceId===workspaceState.id||workspaceState.memberSet.has(id)||
       workspaceState.networkSet.has(id)||workspaceState.reactSet.has(id)||workspaceState.domSet.has(id));
-  }
-
-  function workspaceIndexRecord(id) {
-    id=lnNorm(id);
-    if(!id)return {source:'',order:[],index:-1,visibleAnchors:0};
-
-    // Prefer an order that contains both the target and currently rendered rows.
-    // The longest cached order is not always the useful one: a partial network
-    // response can contain the target but none of the rows around the viewport,
-    // which leaves the navigation routine without a position anchor.
-    const visibleIds=new Set(
-      $('[data-testid="clip-row"]').map(row=>lnRowId(row)).filter(Boolean)
-    );
-    const records=[
-      {source:'network',order:workspaceOrientOrder(workspaceState.networkOrder)},
-      {source:'react',order:workspaceOrientOrder(workspaceState.reactOrder)},
-      {source:'dom',order:workspaceOrientOrder(workspaceState.domOrder)}
-    ].filter(record=>record.order.includes(id)).map(record=>({
-      ...record,
-      visibleAnchors:record.order.reduce((count,songId)=>count+(visibleIds.has(songId)?1:0),0)
-    }));
-    records.sort((a,b)=>b.visibleAnchors-a.visibleAnchors||b.order.length-a.order.length);
-    const record=records[0]||{source:'',order:[],index:-1,visibleAnchors:0};
-    return {...record,index:record.order.indexOf(id)};
-  }
-
-  function workspaceIndexOf(id) {
-    return workspaceIndexRecord(id).index;
-  }
-
-  function workspaceContextAllowsOrder(context='') {
-    const text=String(context||'');
-    if(/\/api\/feed\/v3(?:[/?#]|$)/i.test(text))return true;
-    const key=text.split(/[\/.]/).pop()?.toLowerCase()||'';
-    return /^(?:clips?|clip_ids|songs?|song_ids|feed|generations?|items|results|records)$/.test(key);
   }
 
   function workspaceProjectIdFromObject(object) {
@@ -2225,19 +2081,6 @@ function playlistLikes() {
     const clipId=lnNorm(object.id||object.clip_id||object.uuid);
     if(!clipId)return;
     if(workspaceProjectIdFromObject(object)===workspaceState.id)workspaceMarkMember(clipId);
-  }
-
-  function workspaceLooksLikeClip(object, context='') {
-    if(!object||typeof object!=='object'||Array.isArray(object))return false;
-    const id=lnNorm(object.id||object.clip_id||object.uuid);
-    if(!id||id===workspaceState.id)return false;
-    const metadata=object.metadata&&typeof object.metadata==='object'?object.metadata:{};
-    const hasClipData=Boolean(object.clip_id||object.image_url||object.image_large_url||object.audio_url||
-      object.video_url||metadata.image_url||metadata.image_large_url||metadata.task||metadata.type||
-      metadata.cover_clip_id||metadata.edited_clip_id);
-    if(!hasClipData)return false;
-    const projectId=workspaceProjectIdFromObject(object);
-    return projectId===workspaceState.id||workspaceContextAllowsOrder(context);
   }
 
   function workspaceSequenceClipId(object) {
@@ -2648,7 +2491,6 @@ function playlistLikes() {
     if(!id||workspaceState.feedPreloadDone||workspaceState.feedPreloadPromise)return;
     workspaceState.feedPreloadPromise=Promise.resolve().then(workspacePreloadReactFeed).finally(()=> {
       workspaceState.feedPreloadPromise=null;
-      workspaceDebugState();
     });
   }
 
@@ -2771,15 +2613,14 @@ function playlistLikes() {
     });
   }
 
+  const WORKSPACE_FETCH_KEY='__sunoWorkspaceFetchCapture';
+
   function workspaceInstallFetchCapture() {
-    for(const key of ['__sunoWorkspaceFetchCaptureV43','__sunoWorkspaceFetchCaptureV44','__sunoWorkspaceFetchCaptureV46','__sunoWorkspaceFetchCaptureV47','__sunoWorkspaceFetchCaptureV49','__sunoWorkspaceFetchCaptureV50','__sunoWorkspaceFetchCaptureV51','__sunoWorkspaceFetchCaptureV52','__sunoWorkspaceFetchCaptureV53','__sunoWorkspaceFetchCaptureV54','__sunoWorkspaceFetchCaptureV55','__sunoWorkspaceFetchCaptureV56','__sunoWorkspaceFetchCaptureV57','__sunoWorkspaceFetchCaptureV58','__sunoWorkspaceFetchCaptureV59','__sunoWorkspaceFetchCaptureV60','__sunoWorkspaceFetchCaptureV61']) {
-      const oldHook=window[key];
+    clearControllers(WORKSPACE_FETCH_KEY,/^__sunoWorkspaceFetchCaptureV\d+$/,oldHook=> {
       if(oldHook?.wrapped&&window.fetch===oldHook.wrapped&&typeof oldHook.originalFetch==='function') {
         window.fetch=oldHook.originalFetch;
       }
-      try { delete window[key]; } catch(error) {}
-    }
-    if(window.__sunoWorkspaceFetchCaptureV65)return;
+    });
     const originalFetch=window.fetch;
     if(typeof originalFetch!=='function')return;
 
@@ -2802,8 +2643,7 @@ function playlistLikes() {
     };
     wrapped.__sunoOriginalFetch=originalFetch;
     window.fetch=wrapped;
-    window.__sunoWorkspaceFetchCaptureV65={originalFetch,wrapped};
-    workspaceState.fetchHookInstalled=true;
+    window[WORKSPACE_FETCH_KEY]={originalFetch,wrapped};
   }
 
   function workspaceCandidateUrls() {
@@ -2950,8 +2790,7 @@ function playlistLikes() {
     if(!workspaceState.indexingPromise) {
       workspaceState.indexingPromise=workspaceBuildIndex().finally(()=> {
         workspaceState.indexingPromise=null;
-        workspaceDebugState();
-      });
+        });
     }
   }
 
@@ -2980,37 +2819,8 @@ function playlistLikes() {
       lnScanDetail();
     }
     workspaceKickIndexing();
-    workspaceDebugState();
   }
 
-  function workspaceDebugState(extra={}) {
-    window.__sunoWorkspaceIndexV65={
-      workspaceId:workspaceState.id,
-      workspaceIdentitySource:workspaceState.identitySource||'',
-      workspaceUsesDefaultRoute:workspaceIsFallbackId(),
-      orderSource:workspaceOrderRecord().source,
-      indexedSongs:workspaceOrder().length,
-      metadataSongs:lnSongInfo.size,
-      timestampedSongs:[...lnSongInfo.values()].reduce((count,info)=>count+(info?.createdAt?1:0),0),
-      relationLists:lnSources.size,
-      confirmedMembers:workspaceState.memberSet.size,
-      positionedSongs:workspaceState.positionMap.size,
-      orderedSequences:workspaceState.sequences.length,
-      measuredRowStep:Math.round(workspaceState.rowStep||0),
-      activeRequests:workspaceState.activeRequests,
-      queuedRequests:workspaceState.queue.length,
-      songBatchDisabled:workspaceState.failedSongBatch,
-      feedControllerFound:Boolean(workspaceState.feedController),
-      feedControllerPath:workspaceState.feedController?.path||'',
-      feedPreloadPages:workspaceState.feedPreloadPages,
-      feedPreloadDone:workspaceState.feedPreloadDone,
-      feedPreloadActive:Boolean(workspaceState.feedPreloadPromise),
-      feedPreloadAttempts:workspaceState.feedPreloadAttempts,
-      feedPreloadLastGrowth:workspaceState.feedPreloadLastGrowth,
-      lastUpdate:Date.now(),
-      ...extra
-    };
-  }
   // ---------------------------------------------------------------------------
   // Compact multi-branch ancestry overlay for Create rows
   // ---------------------------------------------------------------------------
@@ -3024,69 +2834,6 @@ function playlistLikes() {
   const ANCESTRY_MAX_DEPTH=10;
   const ANCESTRY_MAX_ENTRIES=100;
   const ANCESTRY_POINTER_OFFSET=14;
-  const NAV_DIAGNOSTIC_KEY='__sunoAncestryNavigationDiagnosticV65';
-  const navDiagnosticState={events:[],activeTarget:'',startedAt:Date.now()};
-
-  function navDiagnosticRows() {
-    return $('[data-testid="clip-row"]').map(row=>{
-      const id=lnRowId(row);
-      const title=row.querySelector('[class*="clip-title-wrapper"] a[href^="/song/"]')?.textContent?.trim()||
-        row.getAttribute('aria-label')||'';
-      const rect=row.getBoundingClientRect();
-      return {id,title,top:Math.round(rect.top),bottom:Math.round(rect.bottom)};
-    }).filter(item=>item.id);
-  }
-
-  function navDiagnosticContainer(container=workspaceScrollContainer()) {
-    if(!container)return null;
-    return {
-      tag:container.tagName||'',
-      id:container.id||'',
-      className:typeof container.className==='string'?container.className:'',
-      scrollTop:Math.round(container.scrollTop||0),
-      scrollHeight:Math.round(container.scrollHeight||0),
-      clientHeight:Math.round(container.clientHeight||0)
-    };
-  }
-
-  function navDiagnosticRecord(stage,targetId,extra={}) {
-    targetId=lnNorm(targetId);
-    let targetRecord={source:'',index:-1,order:[],visibleAnchors:0};
-    try { if(targetId)targetRecord=workspaceIndexRecord(targetId); } catch(error) {}
-    const event={
-      time:new Date().toISOString(),
-      elapsed:Date.now()-navDiagnosticState.startedAt,
-      stage,
-      targetId,
-      container:navDiagnosticContainer(),
-      visibleRows:navDiagnosticRows(),
-      orderSource:targetRecord.source||'',
-      targetIndex:Number.isFinite(targetRecord.index)?targetRecord.index:-1,
-      orderLength:Array.isArray(targetRecord.order)?targetRecord.order.length:0,
-      visibleAnchors:targetRecord.visibleAnchors||0,
-      ...extra
-    };
-    navDiagnosticState.events.push(event);
-    if(navDiagnosticState.events.length>180)navDiagnosticState.events.splice(0,navDiagnosticState.events.length-180);
-    return event;
-  }
-
-  function installNavigationDiagnosticApi() {
-    window[NAV_DIAGNOSTIC_KEY]={
-      version:62,
-      events:navDiagnosticState.events,
-      snapshot:(label='manual')=>navDiagnosticRecord(label,navDiagnosticState.activeTarget),
-      clear:()=>{navDiagnosticState.events.length=0;navDiagnosticState.startedAt=Date.now();},
-      export:()=>JSON.stringify({
-        version:62,
-        url:location.href,
-        exportedAt:new Date().toISOString(),
-        workspace:window.__sunoWorkspaceIndexV65||null,
-        events:navDiagnosticState.events
-      },null,2)
-    };
-  }
-
   function lnRawSources(id) {
     id=lnNorm(id);
     return (lnSources.get(id)||[]).filter(source=>source?.id&&source.id!==id);
@@ -3392,34 +3139,6 @@ function playlistLikes() {
     return fallback||document.scrollingElement||document.documentElement;
   }
 
-  function workspaceVisibleAnchors(order=workspaceOrder()) {
-    const output=[];
-    for(const row of $('[data-testid="clip-row"]')) {
-      const id=lnRowId(row);
-      const index=order.indexOf(id);
-      if(index<0)continue;
-      output.push({id,index,row,rect:row.getBoundingClientRect()});
-    }
-    return output.sort((a,b)=>a.rect.top-b.rect.top);
-  }
-
-  function workspaceEstimateRowStep(anchors) {
-    const values=[];
-    for(let index=1;index<anchors.length;index++) {
-      const previous=anchors[index-1];
-      const current=anchors[index];
-      const indexDelta=current.index-previous.index;
-      const pixelDelta=current.rect.top-previous.rect.top;
-      if(indexDelta>0&&pixelDelta>4)values.push(pixelDelta/indexDelta);
-    }
-    if(values.length) {
-      values.sort((a,b)=>a-b);
-      return values[Math.floor(values.length/2)];
-    }
-    const height=anchors[0]?.rect.height||72;
-    return Math.max(46,height+4);
-  }
-
   function workspaceMedian(values) {
     values=values.filter(Number.isFinite).sort((a,b)=>a-b);
     if(!values.length)return NaN;
@@ -3600,7 +3319,7 @@ function playlistLikes() {
     return row;
   }
 
-  const SELECTED_SONG_HANDLER_KEY='__sunoSelectedSongTintV65';
+  const SELECTED_SONG_HANDLER_KEY='__sunoSelectedSongTint';
   let selectedSongId='';
 
   function workspaceRowSongId(row) {
@@ -3625,15 +3344,9 @@ function playlistLikes() {
   }
 
   function installSelectedSongTint() {
-    const old=window[SELECTED_SONG_HANDLER_KEY]||window.__sunoSelectedSongTintV61||window.__sunoSelectedSongTintV60||window.__sunoSelectedSongTintV59||window.__sunoSelectedSongTintV58||window.__sunoSelectedSongTintV57||window.__sunoSelectedSongTintV56||window.__sunoSelectedSongTintV55;
-    if(old?.onClick)document.removeEventListener('click',old.onClick,true);
-    try { delete window.__sunoSelectedSongTintV61; } catch(error) {}
-    try { delete window.__sunoSelectedSongTintV60; } catch(error) {}
-    try { delete window.__sunoSelectedSongTintV59; } catch(error) {}
-    try { delete window.__sunoSelectedSongTintV58; } catch(error) {}
-    try { delete window.__sunoSelectedSongTintV57; } catch(error) {}
-    try { delete window.__sunoSelectedSongTintV56; } catch(error) {}
-    try { delete window.__sunoSelectedSongTintV55; } catch(error) {}
+    clearControllers(SELECTED_SONG_HANDLER_KEY,/^__sunoSelectedSongTintV\d+$/,controller=> {
+      if(controller?.onClick)document.removeEventListener('click',controller.onClick,true);
+    });
 
     const onClick=event=> {
       const row=event.target.closest?.('[data-testid="clip-row"]');
@@ -3712,51 +3425,27 @@ function playlistLikes() {
   async function workspaceJumpToSong(id) {
     id=lnNorm(id);
     if(!id)return null;
-    navDiagnosticState.activeTarget=id;
-    navDiagnosticRecord('jump:start',id);
     let row=lnVisibleRow(id);
     const container=workspaceScrollContainer();
     if(row) {
-      navDiagnosticRecord('jump:already-mounted',id);
       await workspaceRevealRow(row,container);
       return workspaceHighlightRow(row);
     }
 
-    await workspaceBuildIndex().catch(error=>navDiagnosticRecord('jump:index-error',id,{message:String(error?.message||error)}));
+    await workspaceBuildIndex().catch(()=>{});
     if(!workspaceHasSong(id)||!lnSongInfo.get(id)?.createdAt) {
-      navDiagnosticRecord('jump:waiting-for-catalogue',id,{
-        feedPreloadPages:workspaceState.feedPreloadPages,
-        feedControllerFound:Boolean(workspaceState.feedController)
-      });
       await workspaceWaitForCatalogueSong(id,10000);
     }
     workspaceIndexVisibleRows();
     const position=workspaceSequencePosition(id);
-    if(!position||!Number.isFinite(position.top)) {
-      navDiagnosticRecord('jump:no-position',id,{
-        positionedSongs:workspaceState.positionMap.size,
-        orderedSequences:workspaceState.sequences.length
-      });
-      return null;
-    }
+    if(!position||!Number.isFinite(position.top))return null;
 
     const before=container.scrollTop;
     const maximum=Math.max(0,container.scrollHeight-container.clientHeight);
     const proposed=Math.max(0,Math.min(maximum,position.top-container.clientHeight*0.34));
     const restoreAnchor=workspaceSetScrollAnchoring(container,true);
-    navDiagnosticRecord('jump:before-position-scroll',id,{
-      before,proposed,maximum,positionSource:position.source,
-      positionTop:position.top,positionAnchors:position.anchors,
-      positionError:position.error,positionStep:position.step||workspaceState.rowStep
-    });
-
     container.scrollTo({top:proposed,behavior:'auto'});
     row=await workspaceWaitForRow(id,1350);
-    const after=container.scrollTop;
-    navDiagnosticRecord('jump:after-position-scroll',id,{
-      before,proposed,after,targetMounted:Boolean(row),
-      unexpectedMovement:Math.abs(after-proposed)
-    });
 
     if(!row) {
       // A direct virtual-position jump must never turn into a list traversal. If
@@ -3765,14 +3454,12 @@ function playlistLikes() {
       container.scrollTo({top:before,behavior:'auto'});
       await new Promise(resolve=>window.setTimeout(resolve,100));
       restoreAnchor();
-      navDiagnosticRecord('jump:restored',id,{restoredTo:container.scrollTop});
       return null;
     }
 
     await workspaceRevealRow(row,container);
     restoreAnchor();
     workspaceIndexVisibleRows();
-    navDiagnosticRecord('jump:success',id,{finalScrollTop:container.scrollTop});
     return workspaceHighlightRow(row);
   }
 
@@ -3812,9 +3499,6 @@ function playlistLikes() {
       overlay?.remove();
       overlay=null;
       activeRow=null;
-      window.__sunoAncestryOverlayV65={
-        ...(window.__sunoAncestryOverlayV65||{}),open:false,lastClose:Date.now()
-      };
     };
     const scheduleClose=()=> {
       clearClose();
@@ -3884,7 +3568,7 @@ function playlistLikes() {
       return {scale,scrolling,naturalHeight,availableHeight};
     };
 
-    const position=(row,panel)=> {
+    const position=panel=> {
       if(positionFrame)cancelAnimationFrame(positionFrame);
       const width=Math.max(320,Math.min(590,window.innerWidth-20));
       const x=Math.max(0,Math.min(window.innerWidth,pointerAnchor.x||0));
@@ -3915,24 +3599,16 @@ function playlistLikes() {
         panel.style.setProperty('top',`${Math.round(top)}px`,'important');
 
         const availableHeight=window.innerHeight-top-ANCESTRY_VIEWPORT_EDGE;
-        const fit=fitPanelToViewport(panel,availableHeight);
+        fitPanelToViewport(panel,availableHeight);
         rect=panel.getBoundingClientRect();
         panel.style.setProperty('left',`${Math.round(Math.max(ANCESTRY_VIEWPORT_EDGE,Math.min(left,window.innerWidth-rect.width-ANCESTRY_VIEWPORT_EDGE)))}px`,'important');
 
         lnDrawAncestryDuplicateArrows(panel);
-        const state=window.__sunoAncestryOverlayV65||{};
-        window.__sunoAncestryOverlayV65={
-          ...state,
-          adaptiveScale:fit.scale,
-          adaptiveScrolling:fit.scrolling,
-          adaptiveAvailableHeight:fit.availableHeight,
-          adaptiveNaturalHeight:fit.naturalHeight
-        };
       });
     };
 
 
-    const createShell=(row,id,statusText='Loading ancestry…')=> {
+    const createShell=(row,statusText='Loading ancestry…')=> {
       overlay?.remove();
       activeRow=row;
       overlay=document.createElement('div');
@@ -3959,11 +3635,11 @@ function playlistLikes() {
       overlay.addEventListener('pointerenter',clearClose);
       overlay.addEventListener('pointerleave',scheduleClose);
       document.body.appendChild(overlay);
-      position(row,overlay);
+      position(overlay);
       return {header,count,list};
     };
 
-    const renderTree=(row,id,tree,token)=> {
+    const renderTree=(row,tree,token)=> {
       if(token!==showToken||activeRow!==row||!overlay?.isConnected)return;
       const list=overlay.querySelector('.suno-ancestry-list');
       const count=overlay.querySelector('.suno-ancestry-header span:last-child');
@@ -4063,16 +3739,8 @@ function playlistLikes() {
         more.textContent=`More than ${ANCESTRY_MAX_ENTRIES} known ancestry entries; remaining branches are hidden.`;
         list.appendChild(more);
       }
-      position(row,overlay);
-      requestAnimationFrame(()=> {
-        const arrowLayout=lnDrawAncestryDuplicateArrows(overlay);
-        window.__sunoAncestryOverlayV65={...(window.__sunoAncestryOverlayV65||{}),arrowLayout};
-      });
-      window.__sunoAncestryOverlayV65={
-        open:true,songId:id,entries:tree.entries.length,uniqueSongs:tree.uniqueSongs||0,
-        duplicateReferences:tree.duplicateReferences||0,truncated:tree.truncated,
-        workspaceSongs:workspaceOrder().length,knownSourceLists:lnSources.size,lastOpen:Date.now()
-      };
+      position(overlay);
+      requestAnimationFrame(()=>lnDrawAncestryDuplicateArrows(overlay));
     };
 
     const show=async row=> {
@@ -4085,17 +3753,17 @@ function playlistLikes() {
       lnRememberRow(row);
       lnScanRow(row);
       workspaceRefresh();
-      createShell(row,id);
+      createShell(row);
 
       const existingTree=lnBuildAncestry(id);
-      if(existingTree.entries.length)renderTree(row,id,existingTree,token);
+      if(existingTree.entries.length)renderTree(row,existingTree,token);
 
       workspaceWarmAncestry(id).then(()=> {
         if(token!==showToken||activeRow!==row||!row.isConnected)return;
-        renderTree(row,id,lnBuildAncestry(id),token);
+        renderTree(row,lnBuildAncestry(id),token);
       }).catch(()=> {
         if(token!==showToken||activeRow!==row||!row.isConnected)return;
-        renderTree(row,id,lnBuildAncestry(id),token);
+        renderTree(row,lnBuildAncestry(id),token);
       });
     };
 
@@ -4164,16 +3832,9 @@ function playlistLikes() {
     window.addEventListener('resize',onViewportChange,true);
   }
   lnLoad();
-  installNavigationDiagnosticApi();
   workspaceCleanupLegacyColours();
   workspaceInstallFetchCapture();
-  try {
-    delete window.__sunoLineageV27;
-    delete window.__sunoLineageV28;
-    delete window.__sunoLineageV42;
-    delete window.__sunoWorkspaceIndexV43;
-    delete window.__sunoAncestryOverlayV43;
-  } catch(error) {}
+  clearControllers('',/^__suno(?:Lineage|WorkspaceIndex|AncestryOverlay|AncestryNavigationDiagnostic)V\d+$/);
   // Force the Create-page title edit button to remain visible.
 function createTitleEdit() {
     $('[data-testid="clip-row"] button[aria-label="Edit title"]').forEach(b=> {
@@ -4519,9 +4180,7 @@ function run() {
     editableSeekRefresh();
     exactNumbers();
     creditRender();
-    aboutInBanner();
-    clearPlayDiscs();
-    clearOverlayDiscs()
+    aboutInBanner()
   }
   // ---------------------------------------------------------------------------
 // Mutation scheduling and initialization
@@ -4545,4 +4204,4 @@ let raf=0, sched=()=>raf||(raf=requestAnimationFrame(()=> {
   })
 })();
 
-//# sourceURL=suno-tweaks-v65-editable-player-time.js
+//# sourceURL=suno-tweaks-v67-lean-release-architecture.js
