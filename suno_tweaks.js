@@ -1,5 +1,5 @@
 /**
- * Suno Tweaks v76 — Track-container based empty-space seeking
+ * Suno Tweaks v77 — Mouse-follow time preview
  *
  * Loaded by the persistent local-file bookmarklet. The script keeps the accepted
  * layout, playlist, title-edit and title-expansion behaviour while adding a compact
@@ -15,7 +15,7 @@
  * - Workspace navigation uses measured rows, validated clip sequences and created-at chronology.
  * - Browser scroll anchoring is disabled only during a controlled ancestry jump.
  * - The ancestry popup expands to the viewport, then scales to 66%, then scrolls.
- * - Repeated ancestors remain fully visible; arrows to the same target merge into a shared yellow trunk with hollow junction circles.
+     * - Repeated ancestors remain fully visible; arrows to the same target merge into a shared yellow trunk with hollow junction circles.
  * - The player time follows the progress thumb and can be edited to seek precisely.
  * - Every song-title hover opens the full black title bar, even when the visible title fits.
  * - Profile, View All and carousel song tiles show their creation date and duration from cached or fetched clip metadata.
@@ -399,7 +399,7 @@ button[aria-label="Playing"][class*="rounded-full"][class*="bg-background"],butt
 [data-sc=row] [class*=css-8rxof8],[data-sc=row] [class*=e1rxirk01]{font-size:12px!important;opacity:.65!important;max-width:${W}px!important;overflow:hidden!important}
 [data-pb=main]{display:grid!important;grid-template-columns:minmax(220px,1fr) minmax(480px,5fr) minmax(280px,1fr)!important;align-items:center!important;gap:12px!important;overflow:visible!important}
 [data-pb=l],[data-pb=c],[data-pb=r]{min-width:0!important;max-width:none!important;width:auto!important;flex:none!important;flex-basis:auto!important}
-[data-pb=c]{justify-self:stretch!important;width:100%!important;max-width:none!important}
+[data-pb=c]{position:relative!important;justify-self:stretch!important;width:100%!important;max-width:none!important}
 [data-pb=ci]{width:100%!important;max-width:none!important;margin-left:0!important;margin-right:0!important}
 [data-pb=pr]{width:100%!important;max-width:none!important;min-width:0!important;--min-target-size:${PBS}rem!important;--button-width:${.75*PBS}rem!important;--button-height:${.75*PBS}rem!important;--button-border-width:${.125*PBS}rem!important;--track-width:${.25*PBS}rem!important}
 [data-pb=pr] input[aria-label="Playback progress"]{height:${PBS}rem!important}
@@ -409,6 +409,8 @@ button[aria-label="Playing"][class*="rounded-full"][class*="bg-background"],butt
 .suno-editable-seek-time:hover{background:rgba(30,30,33,.96)!important;color:#fff!important}
 .suno-editable-seek-time[data-editing="true"]{min-width:62px!important;border-color:rgba(255,218,76,.88)!important;background:rgba(20,20,22,.99)!important;color:#fff!important;box-shadow:0 0 0 2px rgba(255,218,76,.15),0 3px 9px rgba(0,0,0,.42)!important}
 .suno-editable-seek-time[data-invalid="true"]{border-color:rgba(255,105,105,.95)!important;box-shadow:0 0 0 2px rgba(255,105,105,.14),0 3px 9px rgba(0,0,0,.42)!important}
+.suno-seek-hover-time{position:absolute!important;z-index:2147482999!important;display:block!important;width:max-content!important;height:auto!important;margin:0!important;padding:0!important;border:0!important;background:transparent!important;color:#fff!important;opacity:0!important;font-family:ui-monospace,SFMono-Regular,Consolas,monospace!important;font-size:11px!important;font-style:normal!important;font-weight:400!important;line-height:14px!important;letter-spacing:0!important;text-align:center!important;font-variant-numeric:tabular-nums!important;white-space:nowrap!important;text-shadow:0 1px 3px rgba(0,0,0,.92)!important;transform:translate(-50%,-100%)!important;pointer-events:none!important;user-select:none!important;transition:opacity .05s linear!important}
+.suno-seek-hover-time[data-visible="true"]{opacity:1!important}
 [data-pinproxy=1]{width:${W}px!important;max-width:${W}px!important;order:0}
 [data-pinproxy=1] .clip-image-container{cursor:pointer!important}
 [data-pinproxy=1] [data-pplay]{position:absolute!important;left:50%!important;top:50%!important;transform:translate(-50%,-50%)!important;width:52px!important;height:52px!important;border-radius:999px!important;border:0!important;background:transparent!important;background-color:transparent!important;box-shadow:none!important;backdrop-filter:none!important;-webkit-backdrop-filter:none!important;color:white!important;font-size:22px!important;opacity:0!important;cursor:pointer!important;transition:opacity .12s ease!important}
@@ -676,6 +678,105 @@ function wide() {
     return false;
   }
 
+  function seekPointerTime(control,event) {
+    const {track,center}=control||{};
+    if(!track?.isConnected||!center?.isConnected)return null;
+
+    const trackRect=track.getBoundingClientRect();
+    const centerRect=center.getBoundingClientRect();
+    if(trackRect.width<=0||centerRect.height<=0)return null;
+    if(event.clientX<trackRect.left||event.clientX>trackRect.right)return null;
+    if(event.clientY<centerRect.top||event.clientY>centerRect.bottom)return null;
+
+    const ratio=Math.max(
+      0,
+      Math.min(1,(event.clientX-trackRect.left)/trackRect.width)
+    );
+    const snapshot=seekSnapshot(control);
+    const span=snapshot.numbers.maximum-snapshot.numbers.minimum;
+    const seconds=snapshot.duration>0
+      ?ratio*snapshot.duration
+      :span>0
+        ?snapshot.numbers.minimum+ratio*span
+        :NaN;
+
+    if(!Number.isFinite(seconds))return null;
+    return {trackRect,centerRect,ratio,seconds};
+  }
+
+  function seekHoverPreview(control) {
+    const center=control?.center;
+    if(!center)return null;
+
+    let preview=center.querySelector(':scope > .suno-seek-hover-time');
+    if(!preview) {
+      preview=document.createElement('span');
+      preview.className='suno-seek-hover-time';
+      preview.setAttribute('aria-hidden','true');
+      center.appendChild(preview);
+    }
+    control.hoverPreview=preview;
+    return preview;
+  }
+
+  function seekHideHoverPreview(control) {
+    const preview=control?.hoverPreview;
+    if(preview)preview.dataset.visible='false';
+  }
+
+  function seekHoverAllowed(control,event) {
+    const target=event.target instanceof Element?event.target:null;
+    if(!target)return false;
+
+    // The native timeline itself is a valid hover-preview target even though its
+    // thumb is an input element. Outside the timeline, retain the strict
+    // "empty space only" rule used by the extended click area.
+    if(control.track?.contains(target))return true;
+    if(seekWideClickInteractive(target,control,event))return false;
+
+    const topmost=document.elementFromPoint(event.clientX,event.clientY);
+    if(topmost&&control.track?.contains(topmost))return true;
+    return !topmost||!seekWideClickInteractive(topmost,control,event);
+  }
+
+  function seekMoveHoverPreview(control,event) {
+    if(!control||!seekHoverAllowed(control,event)) {
+      seekHideHoverPreview(control);
+      return;
+    }
+
+    const point=seekPointerTime(control,event);
+    if(!point) {
+      seekHideHoverPreview(control);
+      return;
+    }
+
+    const preview=seekHoverPreview(control);
+    if(!preview)return;
+
+    preview.textContent=seekFormatTime(point.seconds);
+    preview.dataset.visible='true';
+
+    const centerWidth=point.centerRect.width;
+    const centerHeight=point.centerRect.height;
+    const half=Math.max(15,preview.getBoundingClientRect().width/2||15);
+    const rawX=event.clientX-point.centerRect.left;
+    const x=Math.max(
+      half,
+      Math.min(Math.max(half,centerWidth-half),rawX)
+    );
+
+    // Follow the cursor with a small upward offset, while keeping the complete
+    // text inside the central playbar area.
+    const minimumTop=16;
+    const maximumTop=Math.max(minimumTop,centerHeight-2);
+    const rawTop=event.clientY-point.centerRect.top-6;
+    const top=Math.max(minimumTop,Math.min(maximumTop,rawTop));
+
+    preview.style.setProperty('left',`${x}px`,'important');
+    preview.style.setProperty('top',`${top}px`,'important');
+  }
+
   function seekWideClick(control,event) {
     if(!control||event.defaultPrevented||event.button!==0)return;
     if(event.ctrlKey||event.metaKey||event.altKey||event.shiftKey)return;
@@ -689,32 +790,14 @@ function wide() {
     const topmost=document.elementFromPoint(event.clientX,event.clientY);
     if(topmost&&seekWideClickInteractive(topmost,control,event))return;
 
-    // Suno's range input is only the movable thumb. The actual timeline width is
-    // the surrounding data-pb="tr" element.
-    const trackRect=track.getBoundingClientRect();
-    const centerRect=center.getBoundingClientRect();
-    if(trackRect.width<=0||centerRect.height<=0)return;
-
-    if(event.clientX<trackRect.left||event.clientX>trackRect.right)return;
-    if(event.clientY<centerRect.top||event.clientY>centerRect.bottom)return;
+    const point=seekPointerTime(control,event);
+    if(!point)return;
 
     // Clicks inside the real track rectangle remain entirely native. The custom
     // handler only adds the otherwise empty area above and below it.
-    if(event.clientY>=trackRect.top&&event.clientY<=trackRect.bottom)return;
+    if(event.clientY>=point.trackRect.top&&event.clientY<=point.trackRect.bottom)return;
 
-    const ratio=Math.max(
-      0,
-      Math.min(1,(event.clientX-trackRect.left)/trackRect.width)
-    );
-    const snapshot=seekSnapshot(control);
-    const span=snapshot.numbers.maximum-snapshot.numbers.minimum;
-    const requested=snapshot.duration>0
-      ?ratio*snapshot.duration
-      :span>0
-        ?snapshot.numbers.minimum+ratio*span
-        :NaN;
-
-    if(!Number.isFinite(requested)||!seekToSeconds(control,requested))return;
+    if(!seekToSeconds(control,point.seconds))return;
 
     event.preventDefault();
     event.stopPropagation();
@@ -730,13 +813,31 @@ function wide() {
     // seekWideClickInteractive().
     const previous=area.__sunoWideSeekHandler;
     if(previous)area.removeEventListener('click',previous,true);
+    const previousMove=area.__sunoHoverSeekMoveHandler;
+    if(previousMove)area.removeEventListener('pointermove',previousMove,true);
+    const previousLeave=area.__sunoHoverSeekLeaveHandler;
+    if(previousLeave)area.removeEventListener('pointerleave',previousLeave,true);
 
     const handler=event=>seekWideClick(area.__sunoWideSeekControl,event);
+    const moveHandler=event=>
+      seekMoveHoverPreview(area.__sunoWideSeekControl,event);
+    const leaveHandler=()=>
+      seekHideHoverPreview(area.__sunoWideSeekControl);
+
     area.__sunoWideSeekControl=control;
     area.__sunoWideSeekHandler=handler;
+    area.__sunoHoverSeekMoveHandler=moveHandler;
+    area.__sunoHoverSeekLeaveHandler=leaveHandler;
+
     area.addEventListener('click',handler,true);
+    area.addEventListener('pointermove',moveHandler,true);
+    area.addEventListener('pointerleave',leaveHandler,true);
+
     control.wideClickArea=area;
     control.wideClickHandler=handler;
+    control.hoverMoveHandler=moveHandler;
+    control.hoverLeaveHandler=leaveHandler;
+    seekHoverPreview(control);
   }
 
   function seekPause(control) {
@@ -933,10 +1034,17 @@ function wide() {
       for(const control of controller?.controls||[]) {
         const area=control?.wideClickArea;
         const handler=control?.wideClickHandler;
+        const moveHandler=control?.hoverMoveHandler;
+        const leaveHandler=control?.hoverLeaveHandler;
         if(area&&handler)area.removeEventListener('click',handler,true);
+        if(area&&moveHandler)area.removeEventListener('pointermove',moveHandler,true);
+        if(area&&leaveHandler)area.removeEventListener('pointerleave',leaveHandler,true);
+        control?.hoverPreview?.remove?.();
         if(area?.__sunoWideSeekHandler===handler) {
           delete area.__sunoWideSeekHandler;
           delete area.__sunoWideSeekControl;
+          delete area.__sunoHoverSeekMoveHandler;
+          delete area.__sunoHoverSeekLeaveHandler;
         }
       }
     });
@@ -4980,4 +5088,4 @@ let raf=0, sched=()=>raf||(raf=requestAnimationFrame(()=> {
   })
 })();
 
-//# sourceURL=suno-tweaks-v76-track-container-seek-area.js
+//# sourceURL=suno-tweaks-v77-mouse-follow-time-preview.js
