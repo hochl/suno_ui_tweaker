@@ -1,5 +1,5 @@
 /**
- * Suno Tweaks v72 — Safe tracker blocking integrated
+ * Suno Tweaks v73 — Card metadata aligned to cover edge
  *
  * Loaded by the persistent local-file bookmarklet. The script keeps the accepted
  * layout, playlist, title-edit and title-expansion behaviour while adding a compact
@@ -390,10 +390,8 @@ button[aria-label="Playing"][class*="rounded-full"][class*="bg-background"],butt
 [data-sc=txt] a[href^="/song/"]:hover{text-decoration:underline!important}
 #suno-song-title-exact-overlay{position:fixed!important;display:block!important;width:max-content!important;height:auto!important;max-height:none!important;box-sizing:border-box!important;margin:0!important;padding:0!important;white-space:normal!important;overflow:visible!important;text-overflow:clip!important;overflow-wrap:anywhere!important;background:#000!important;border-radius:2px!important;text-decoration:none!important;cursor:pointer!important;z-index:2147483647!important}
 [data-sc=txt] [class*=clip-title-wrapper],[data-sc=txt] .flex.items-center.gap-2{width:${W}px!important;max-width:${W}px!important;min-width:0!important;overflow:hidden!important}
-.suno-card-action-line,.suno-card-creator-line{display:flex!important;align-items:center!important;min-width:0!important;width:100%!important;max-width:100%!important;box-sizing:border-box!important}
-.suno-card-date,.suno-card-duration{display:inline-flex!important;align-items:center!important;flex:0 0 auto!important;white-space:nowrap!important;font-family:inherit!important;font-size:inherit!important;font-style:inherit!important;font-weight:inherit!important;line-height:inherit!important;letter-spacing:inherit!important;color:inherit!important;font-variant-numeric:inherit!important}
-.suno-card-date{margin-left:auto!important;padding-left:6px!important;text-align:right!important}
-.suno-card-duration{margin-left:auto!important;padding-left:6px!important;text-align:right!important}
+.suno-card-action-line,.suno-card-creator-line{display:flex!important;align-items:center!important;justify-content:flex-start!important;min-width:0!important;width:var(--suno-card-metadata-width,100%)!important;max-width:var(--suno-card-metadata-width,100%)!important;box-sizing:border-box!important;padding-right:0!important;margin-right:0!important}
+.suno-card-date,.suno-card-duration{display:inline-flex!important;align-items:center!important;justify-content:flex-end!important;flex:0 0 auto!important;white-space:nowrap!important;margin-left:auto!important;margin-right:0!important;padding-left:6px!important;padding-right:0!important;text-align:right!important;font-family:inherit!important;font-size:inherit!important;font-style:inherit!important;font-weight:inherit!important;line-height:inherit!important;letter-spacing:inherit!important;color:inherit!important;font-variant-numeric:inherit!important}
 .suno-card-generated-creator{display:flex!important;align-items:center!important;width:100%!important;min-width:0!important;box-sizing:border-box!important;color:inherit!important}
 .suno-card-generated-creator>a{min-width:0!important;overflow:hidden!important;text-overflow:ellipsis!important;white-space:nowrap!important;color:inherit!important;text-decoration:none!important}
 [data-sc=menu]{position:absolute!important;top:8px!important;right:8px!important;z-index:20!important;opacity:0!important;transition:opacity .12s ease!important}
@@ -1699,6 +1697,28 @@ function playlistLikes() {
     }
   }
 
+  function cardMetadataArtwork(row) {
+    if(!row)return null;
+    return row.querySelector(
+      '.clip-image-container,[data-sc="art"],img[data-suno-card-img="1"],img'
+    );
+  }
+
+  function cardMetadataAlignLineToArtwork(row,line) {
+    if(!row||!line||typeof line.getBoundingClientRect!=='function')return;
+    const artwork=cardMetadataArtwork(row);
+    if(!artwork||typeof artwork.getBoundingClientRect!=='function')return;
+
+    const artworkRect=artwork.getBoundingClientRect();
+    const lineRect=line.getBoundingClientRect();
+    const width=artworkRect.right-lineRect.left;
+
+    // The line may begin inside a nested Suno wrapper, so its width cannot safely
+    // be inherited from that wrapper. Measure to the real artwork edge instead.
+    if(!Number.isFinite(width)||width<40||width>800)return;
+    line.style.setProperty('--suno-card-metadata-width',`${width}px`);
+  }
+
   function cardMetadataRender() {
     const rows=cardMetadataRows();
     for(const row of rows) {
@@ -1727,6 +1747,7 @@ function playlistLikes() {
           label.dataset.sunoCardDate='1';
           cardMetadataCopyTypography(label,plPlaySpan(row)||actionLine.firstElementChild);
         }
+        cardMetadataAlignLineToArtwork(row,actionLine);
       }
 
       const creatorLine=cardMetadataCreatorLine(row,host,actionLine);
@@ -1749,6 +1770,7 @@ function playlistLikes() {
             if(creatorLink)cardMetadataCopyTypography(creatorLink,plPlaySpan(row)||actionLine);
           }
         }
+        cardMetadataAlignLineToArtwork(row,creatorLine);
       }
     }
     return rows;
