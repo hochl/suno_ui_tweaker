@@ -1,5 +1,5 @@
 /**
- * Suno Tweaks v73 — Card metadata aligned to cover edge
+ * Suno Tweaks v76 — Track-container based empty-space seeking
  *
  * Loaded by the persistent local-file bookmarklet. The script keeps the accepted
  * layout, playlist, title-edit and title-expansion behaviour while adding a compact
@@ -650,6 +650,95 @@ function wide() {
     slider.dispatchEvent(new Event('change',{bubbles:true}));
   }
 
+  function seekWideClickInteractive(target,control,event) {
+    if(!(target instanceof Element))return true;
+
+    const interactiveSelector=
+      'button,a,input,select,textarea,label,'+
+      '[role="button"],[role="slider"],[role="link"],[role="menuitem"],'+
+      '[contenteditable="true"],.suno-editable-seek-time';
+
+    if(target.closest(interactiveSelector))return true;
+    if(target.closest('svg,img,picture,canvas,video'))return true;
+
+    // In capture phase, inspect the complete event path as well. This catches
+    // controls whose inner wrapper itself has no role or tag suggesting UI.
+    for(const node of event?.composedPath?.()||[]) {
+      if(!(node instanceof Element))continue;
+      if(node.matches?.(interactiveSelector))return true;
+      if(node.matches?.('svg,img,picture,canvas,video'))return true;
+    }
+
+    // Suno renders current and total time as ordinary text nodes.
+    for(const item of seekTimeStrings(control.progressRow||control.root)) {
+      if(item.node===target||item.node.contains(target))return true;
+    }
+    return false;
+  }
+
+  function seekWideClick(control,event) {
+    if(!control||event.defaultPrevented||event.button!==0)return;
+    if(event.ctrlKey||event.metaKey||event.altKey||event.shiftKey)return;
+
+    const {slider,track,center}=control;
+    if(!slider?.isConnected||!track?.isConnected||!center?.isConnected)return;
+
+    const target=event.target instanceof Element?event.target:null;
+    if(seekWideClickInteractive(target,control,event))return;
+
+    const topmost=document.elementFromPoint(event.clientX,event.clientY);
+    if(topmost&&seekWideClickInteractive(topmost,control,event))return;
+
+    // Suno's range input is only the movable thumb. The actual timeline width is
+    // the surrounding data-pb="tr" element.
+    const trackRect=track.getBoundingClientRect();
+    const centerRect=center.getBoundingClientRect();
+    if(trackRect.width<=0||centerRect.height<=0)return;
+
+    if(event.clientX<trackRect.left||event.clientX>trackRect.right)return;
+    if(event.clientY<centerRect.top||event.clientY>centerRect.bottom)return;
+
+    // Clicks inside the real track rectangle remain entirely native. The custom
+    // handler only adds the otherwise empty area above and below it.
+    if(event.clientY>=trackRect.top&&event.clientY<=trackRect.bottom)return;
+
+    const ratio=Math.max(
+      0,
+      Math.min(1,(event.clientX-trackRect.left)/trackRect.width)
+    );
+    const snapshot=seekSnapshot(control);
+    const span=snapshot.numbers.maximum-snapshot.numbers.minimum;
+    const requested=snapshot.duration>0
+      ?ratio*snapshot.duration
+      :span>0
+        ?snapshot.numbers.minimum+ratio*span
+        :NaN;
+
+    if(!Number.isFinite(requested)||!seekToSeconds(control,requested))return;
+
+    event.preventDefault();
+    event.stopPropagation();
+    seekUpdateControl(control,true);
+  }
+
+  function seekInstallWideClick(control) {
+    const area=control.center;
+    if(!area)return;
+
+    // Capture on the complete central playbar column. This includes empty gaps in
+    // the control row above the timeline, while real buttons remain excluded by
+    // seekWideClickInteractive().
+    const previous=area.__sunoWideSeekHandler;
+    if(previous)area.removeEventListener('click',previous,true);
+
+    const handler=event=>seekWideClick(area.__sunoWideSeekControl,event);
+    area.__sunoWideSeekControl=control;
+    area.__sunoWideSeekHandler=handler;
+    area.addEventListener('click',handler,true);
+    control.wideClickArea=area;
+    control.wideClickHandler=handler;
+  }
+
   function seekPause(control) {
     const button=control.root.querySelector('button[aria-label="Pause"],button[aria-label^="Pause "],button[aria-label="Playing"],button[aria-label^="Playing "]');
     if(button)press(button);
@@ -767,7 +856,12 @@ function wide() {
       editor.title='Click to enter a time such as 3:44';
       track.appendChild(editor);
     }
-    const control={root,slider,progressRow,track,editor,cancelValue:'0:00',lastCommitted:0};
+    const center=progressRow.closest('[data-pb="c"]')||
+      track.closest('[data-pb="c"]')||root;
+    const control={
+      root,center,slider,progressRow,track,editor,
+      cancelValue:'0:00',lastCommitted:0
+    };
     editor.__sunoSeekControl=control;
     if(!editor.dataset.sunoSeekHandlers) {
       editor.dataset.sunoSeekHandlers='1';
@@ -797,6 +891,7 @@ function wide() {
       });
     }
     editableSeekState.controls.add(control);
+    seekInstallWideClick(control);
     seekUpdateControl(control,true);
     return control;
   }
@@ -813,7 +908,17 @@ function wide() {
       A(track,'tr','pb');
       let editor=track.querySelector(':scope > .suno-editable-seek-time');
       let control=editor?.__sunoSeekControl;
-      if(!control||control.slider!==slider||control.root!==root)control=seekMakeControl(root,slider,progressRow,track);
+      if(!control||control.slider!==slider||control.root!==root) {
+        control=seekMakeControl(root,slider,progressRow,track);
+        editor=control.editor;
+      }
+      control.progressRow=progressRow;
+      control.track=track;
+      control.center=progressRow.closest('[data-pb="c"]')||
+        track.closest('[data-pb="c"]')||root;
+      control.editor=editor||control.editor;
+      control.editor.__sunoSeekControl=control;
+      seekInstallWideClick(control);
       live.add(control);
       seekUpdateControl(control);
     }
@@ -825,6 +930,15 @@ function wide() {
   function installEditableSeekTime() {
     clearControllers(EDITABLE_SEEK_KEY,/^__sunoEditableSeekTimeV\d+$/,controller=> {
       if(controller?.timer)window.clearInterval(controller.timer);
+      for(const control of controller?.controls||[]) {
+        const area=control?.wideClickArea;
+        const handler=control?.wideClickHandler;
+        if(area&&handler)area.removeEventListener('click',handler,true);
+        if(area?.__sunoWideSeekHandler===handler) {
+          delete area.__sunoWideSeekHandler;
+          delete area.__sunoWideSeekControl;
+        }
+      }
     });
     editableSeekState.timer=window.setInterval(()=> {
       for(const control of [...editableSeekState.controls]) {
@@ -4866,4 +4980,4 @@ let raf=0, sched=()=>raf||(raf=requestAnimationFrame(()=> {
   })
 })();
 
-//# sourceURL=suno-tweaks-v72-safe-tracker-blocking.js
+//# sourceURL=suno-tweaks-v76-track-container-seek-area.js
