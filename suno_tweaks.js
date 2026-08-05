@@ -1,5 +1,5 @@
 /**
- * Suno Tweaks v77 — Mouse-follow time preview
+ * Suno Tweaks v83 — Stable title hover and pinned separator
  *
  * Loaded by the persistent local-file bookmarklet. The script keeps the accepted
  * layout, playlist, title-edit and title-expansion behaviour while adding a compact
@@ -15,7 +15,7 @@
  * - Workspace navigation uses measured rows, validated clip sequences and created-at chronology.
  * - Browser scroll anchoring is disabled only during a controlled ancestry jump.
  * - The ancestry popup expands to the viewport, then scales to 66%, then scrolls.
-     * - Repeated ancestors remain fully visible; arrows to the same target merge into a shared yellow trunk with hollow junction circles.
+ * - Repeated ancestors remain fully visible; arrows to the same target merge into a shared yellow trunk with hollow junction circles.
  * - The player time follows the progress thumb and can be edited to seek precisely.
  * - Every song-title hover opens the full black title bar, even when the visible title fits.
  * - Profile, View All and carousel song tiles show their creation date and duration from cached or fetched clip metadata.
@@ -411,6 +411,13 @@ button[aria-label="Playing"][class*="rounded-full"][class*="bg-background"],butt
 .suno-editable-seek-time[data-invalid="true"]{border-color:rgba(255,105,105,.95)!important;box-shadow:0 0 0 2px rgba(255,105,105,.14),0 3px 9px rgba(0,0,0,.42)!important}
 .suno-seek-hover-time{position:absolute!important;z-index:2147482999!important;display:block!important;width:max-content!important;height:auto!important;margin:0!important;padding:0!important;border:0!important;background:transparent!important;color:#fff!important;opacity:0!important;font-family:ui-monospace,SFMono-Regular,Consolas,monospace!important;font-size:11px!important;font-style:normal!important;font-weight:400!important;line-height:14px!important;letter-spacing:0!important;text-align:center!important;font-variant-numeric:tabular-nums!important;white-space:nowrap!important;text-shadow:0 1px 3px rgba(0,0,0,.92)!important;transform:translate(-50%,-100%)!important;pointer-events:none!important;user-select:none!important;transition:opacity .05s linear!important}
 .suno-seek-hover-time[data-visible="true"]{opacity:1!important}
+[data-suno-pinned-column="1"]{display:block!important;flex:0 0 var(--suno-pinned-collapsed-height,128px)!important;height:var(--suno-pinned-collapsed-height,128px)!important;min-height:var(--suno-pinned-collapsed-height,128px)!important;max-height:var(--suno-pinned-collapsed-height,128px)!important;margin-bottom:12px!important;overflow-x:hidden!important;overflow-y:hidden!important;overscroll-behavior:contain!important;scrollbar-width:thin!important;box-shadow:0 2px 0 #ffda4c!important}
+[data-suno-pinned-column="1"]:hover,[data-suno-pinned-column="1"]:focus-within,[data-suno-pinned-column="1"][data-suno-pinned-title-hover="1"]{flex-basis:min(var(--suno-pinned-full-height,128px),50vh)!important;height:min(var(--suno-pinned-full-height,128px),50vh)!important;min-height:min(var(--suno-pinned-full-height,128px),50vh)!important;max-height:50vh!important;overflow-x:hidden!important;overflow-y:auto!important}
+[data-suno-pinned-column="1"]::-webkit-scrollbar{width:8px!important;height:0!important}
+[data-suno-pinned-column="1"]::-webkit-scrollbar-thumb{background:rgba(255,255,255,.28)!important;border-radius:999px!important}
+[data-suno-pinned-column="1"]::-webkit-scrollbar-track{background:transparent!important}
+[data-suno-pinned-column="1"]>*{display:block!important;width:100%!important;max-width:100%!important;min-width:0!important}
+[data-suno-pinned-column="1"] .clip-row.clip-pin{width:100%!important;max-width:100%!important;min-width:0!important;box-sizing:border-box!important}
 [data-pinproxy=1]{width:${W}px!important;max-width:${W}px!important;order:0}
 [data-pinproxy=1] .clip-image-container{cursor:pointer!important}
 [data-pinproxy=1] [data-pplay]{position:absolute!important;left:50%!important;top:50%!important;transform:translate(-50%,-50%)!important;width:52px!important;height:52px!important;border-radius:999px!important;border:0!important;background:transparent!important;background-color:transparent!important;box-shadow:none!important;backdrop-filter:none!important;-webkit-backdrop-filter:none!important;color:white!important;font-size:22px!important;opacity:0!important;cursor:pointer!important;transition:opacity .12s ease!important}
@@ -1188,6 +1195,115 @@ function exactNumbers() {
       return s
     })
   }
+  function markPinnedColumn() {
+    const rows=[...document.querySelectorAll('.clip-row.clip-pin')].filter(row=> {
+      if(!row.isConnected)return false;
+      if(row.closest('[data-carousel-proxy="1"]'))return false;
+      const rect=row.getBoundingClientRect();
+      return rect.width>0&&rect.height>0;
+    });
+    if(rows.length<2)return false;
+
+    let strip=null;
+    for(let node=rows[0].parentElement,depth=0;node&&depth<12;node=node.parentElement,depth++) {
+      const direct=[...node.children];
+      const pinnedChildren=direct.filter(child=>
+        child.querySelector?.('.clip-row.clip-pin')
+      );
+      if(pinnedChildren.length===rows.length) {
+        strip=node;
+        break;
+      }
+    }
+    if(!strip)return false;
+
+    // Only mark the actual strip. No parent, scroll owner or sibling is changed.
+    if(strip.dataset.sunoPinnedColumn!=="1") {
+      strip.dataset.sunoPinnedColumn="1";
+    }
+
+    const sizeStrip=()=> {
+      if(!strip.isConnected)return;
+
+      const items=[...strip.children].filter(child=>
+        child.querySelector?.('.clip-row.clip-pin')
+      );
+      if(!items.length)return;
+
+      let total=0;
+      let collapsed=0;
+
+      items.forEach((item,index)=> {
+        const row=item.querySelector('.clip-row.clip-pin');
+        const itemStyle=getComputedStyle(item);
+        const height=Math.max(
+          item.getBoundingClientRect().height,
+          item.offsetHeight,
+          item.scrollHeight,
+          row?.getBoundingClientRect?.().height||0,
+          row?.offsetHeight||0
+        );
+        const outerHeight=height+
+          (parseFloat(itemStyle.marginTop)||0)+
+          (parseFloat(itemStyle.marginBottom)||0);
+
+        total+=outerHeight;
+        if(index<2)collapsed+=outerHeight;
+      });
+
+      total=Math.ceil(total);
+      collapsed=Math.ceil(collapsed);
+      if(total<=0||collapsed<=0)return;
+
+      const previousFull=parseFloat(
+        strip.style.getPropertyValue('--suno-pinned-full-height')
+      )||0;
+      const previousCollapsed=parseFloat(
+        strip.style.getPropertyValue('--suno-pinned-collapsed-height')
+      )||0;
+
+      if(Math.abs(previousFull-total)>=1) {
+        strip.style.setProperty(
+          '--suno-pinned-full-height',
+          `${total}px`
+        );
+      }
+      if(Math.abs(previousCollapsed-collapsed)>=1) {
+        strip.style.setProperty(
+          '--suno-pinned-collapsed-height',
+          `${collapsed}px`
+        );
+      }
+    };
+
+    // Measure the first two rows separately from the complete list. CSS handles
+    // collapse/expand without moving or rebuilding any React-managed elements.
+    sizeStrip();
+    if(strip.dataset.sunoPinnedHeightScheduled!=="1") {
+      strip.dataset.sunoPinnedHeightScheduled="1";
+      requestAnimationFrame(()=> {
+        strip.dataset.sunoPinnedHeightScheduled="0";
+        sizeStrip();
+      });
+    }
+
+    if(strip.dataset.sunoPinnedCollapseReset!=="1") {
+      strip.dataset.sunoPinnedCollapseReset="1";
+      const resetScroll=()=>requestAnimationFrame(()=> {
+        if(!strip.isConnected)return;
+        if(
+          strip.matches(':hover')||
+          strip.matches(':focus-within')||
+          strip.dataset.sunoPinnedTitleHover==="1"
+        )return;
+        strip.scrollTop=0;
+      });
+      strip.addEventListener('pointerleave',resetScroll);
+      strip.addEventListener('focusout',resetScroll);
+    }
+    return true;
+  }
+
   function getPins() {
     let h=handle(), out=[], seen=new Set;
     for(const sc of $("script")) {
@@ -4884,6 +5000,7 @@ function createTitleEdit() {
 
     let activeLink = null;
     let overlay = null;
+    let activePinnedStrip = null;
     let hideTimer = 0;
 
     const cancelHide = () => {
@@ -4896,6 +5013,10 @@ function createTitleEdit() {
       cancelHide();
       overlay?.remove();
       overlay = null;
+      if(activePinnedStrip?.isConnected) {
+        delete activePinnedStrip.dataset.sunoPinnedTitleHover;
+      }
+      activePinnedStrip = null;
       activeLink = null;
     };
 
@@ -4944,6 +5065,11 @@ function createTitleEdit() {
       if (!fullTitle || !linkRect.width || !linkRect.height) return;
 
       activeLink = link;
+      activePinnedStrip=link.closest('[data-suno-pinned-column="1"]');
+      if(activePinnedStrip) {
+        activePinnedStrip.dataset.sunoPinnedTitleHover='1';
+      }
+
       overlay = document.createElement('a');
       overlay.id = TITLE_OVERLAY_ID;
       overlay.href = link.href;
@@ -4967,9 +5093,19 @@ function createTitleEdit() {
       overlay.style.setProperty('max-width', `${maximumWidth}px`, 'important');
       overlay.style.setProperty('color', getComputedStyle(link).color, 'important');
 
-      overlay.addEventListener('pointerenter', cancelHide);
+      overlay.addEventListener('pointerenter',()=> {
+        cancelHide();
+        if(activePinnedStrip?.isConnected) {
+          activePinnedStrip.dataset.sunoPinnedTitleHover='1';
+        }
+      });
       overlay.addEventListener('pointerleave', scheduleHide);
-      overlay.addEventListener('focus', cancelHide);
+      overlay.addEventListener('focus',()=> {
+        cancelHide();
+        if(activePinnedStrip?.isConnected) {
+          activePinnedStrip.dataset.sunoPinnedTitleHover='1';
+        }
+      });
       overlay.addEventListener('blur', scheduleHide);
 
       document.body.appendChild(overlay);
@@ -5051,6 +5187,7 @@ function run() {
     workspaceApplySelectedSongTint();
     layoutCards();
     prepareSongTitleExpansion();
+    markPinnedColumn();
     let nr=layoutNewRows(), ch=applyPins();
     if(ch||nr) {
       layoutCards();
@@ -5088,4 +5225,4 @@ let raf=0, sched=()=>raf||(raf=requestAnimationFrame(()=> {
   })
 })();
 
-//# sourceURL=suno-tweaks-v77-mouse-follow-time-preview.js
+//# sourceURL=suno-tweaks-v83-title-hover-lock-and-separator.js
