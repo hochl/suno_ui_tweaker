@@ -1,5 +1,5 @@
 /**
- * Suno Tweaks v83 — Stable title hover and pinned separator
+ * Suno Tweaks v90 — Simple timestamp seek
  *
  * Loaded by the persistent local-file bookmarklet. The script keeps the accepted
  * layout, playlist, title-edit and title-expansion behaviour while adding a compact
@@ -389,6 +389,8 @@ button[aria-label="Playing"][class*="rounded-full"][class*="bg-background"],butt
 [data-sc=txt] a[href^="/song/"]{display:block!important;width:${W}px!important;max-width:${W}px!important;font-size:14px!important;font-weight:600!important;line-height:1.25!important;white-space:nowrap!important;overflow:hidden!important;text-overflow:ellipsis!important;text-decoration:none!important}
 [data-sc=txt] a[href^="/song/"]:hover{text-decoration:underline!important}
 #suno-song-title-exact-overlay{position:fixed!important;display:block!important;width:max-content!important;height:auto!important;max-height:none!important;box-sizing:border-box!important;margin:0!important;padding:0!important;white-space:normal!important;overflow:visible!important;text-overflow:clip!important;overflow-wrap:anywhere!important;background:#000!important;border-radius:2px!important;text-decoration:none!important;cursor:pointer!important;z-index:2147483647!important}
+#suno-time-popup{position:fixed!important;z-index:2147483647!important;padding:3px 7px!important;border:1px solid rgba(255,255,255,.35)!important;border-radius:4px!important;background:#151515!important;color:#fff!important;font:400 11px/14px ui-monospace,SFMono-Regular,Consolas,monospace!important;white-space:nowrap!important;cursor:pointer!important;opacity:0!important;transition:opacity .12s ease-out!important}
+#suno-time-popup[data-show="1"]{opacity:1!important}
 [data-sc=txt] [class*=clip-title-wrapper],[data-sc=txt] .flex.items-center.gap-2{width:${W}px!important;max-width:${W}px!important;min-width:0!important;overflow:hidden!important}
 .suno-card-action-line,.suno-card-creator-line{display:flex!important;align-items:center!important;justify-content:flex-start!important;min-width:0!important;width:var(--suno-card-metadata-width,100%)!important;max-width:var(--suno-card-metadata-width,100%)!important;box-sizing:border-box!important;padding-right:0!important;margin-right:0!important}
 .suno-card-date,.suno-card-duration{display:inline-flex!important;align-items:center!important;justify-content:flex-end!important;flex:0 0 auto!important;white-space:nowrap!important;margin-left:auto!important;margin-right:0!important;padding-left:6px!important;padding-right:0!important;text-align:right!important;font-family:inherit!important;font-size:inherit!important;font-style:inherit!important;font-weight:inherit!important;line-height:inherit!important;letter-spacing:inherit!important;color:inherit!important;font-variant-numeric:inherit!important}
@@ -412,7 +414,7 @@ button[aria-label="Playing"][class*="rounded-full"][class*="bg-background"],butt
 .suno-seek-hover-time{position:absolute!important;z-index:2147482999!important;display:block!important;width:max-content!important;height:auto!important;margin:0!important;padding:0!important;border:0!important;background:transparent!important;color:#fff!important;opacity:0!important;font-family:ui-monospace,SFMono-Regular,Consolas,monospace!important;font-size:11px!important;font-style:normal!important;font-weight:400!important;line-height:14px!important;letter-spacing:0!important;text-align:center!important;font-variant-numeric:tabular-nums!important;white-space:nowrap!important;text-shadow:0 1px 3px rgba(0,0,0,.92)!important;transform:translate(-50%,-100%)!important;pointer-events:none!important;user-select:none!important;transition:opacity .05s linear!important}
 .suno-seek-hover-time[data-visible="true"]{opacity:1!important}
 [data-suno-pinned-column="1"]{display:block!important;flex:0 0 var(--suno-pinned-collapsed-height,128px)!important;height:var(--suno-pinned-collapsed-height,128px)!important;min-height:var(--suno-pinned-collapsed-height,128px)!important;max-height:var(--suno-pinned-collapsed-height,128px)!important;margin-bottom:12px!important;overflow-x:hidden!important;overflow-y:hidden!important;overscroll-behavior:contain!important;scrollbar-width:thin!important;box-shadow:0 2px 0 #ffda4c!important}
-[data-suno-pinned-column="1"]:hover,[data-suno-pinned-column="1"]:focus-within,[data-suno-pinned-column="1"][data-suno-pinned-title-hover="1"]{flex-basis:min(var(--suno-pinned-full-height,128px),50vh)!important;height:min(var(--suno-pinned-full-height,128px),50vh)!important;min-height:min(var(--suno-pinned-full-height,128px),50vh)!important;max-height:50vh!important;overflow-x:hidden!important;overflow-y:auto!important}
+[data-suno-pinned-column="1"]:hover,[data-suno-pinned-column="1"]:focus-within,[data-suno-pinned-column="1"][data-suno-pinned-title-hover="1"],[data-suno-pinned-column="1"][data-suno-time-open="1"]{flex-basis:min(var(--suno-pinned-full-height,128px),50vh)!important;height:min(var(--suno-pinned-full-height,128px),50vh)!important;min-height:min(var(--suno-pinned-full-height,128px),50vh)!important;max-height:50vh!important;overflow-x:hidden!important;overflow-y:auto!important}
 [data-suno-pinned-column="1"]::-webkit-scrollbar{width:8px!important;height:0!important}
 [data-suno-pinned-column="1"]::-webkit-scrollbar-thumb{background:rgba(255,255,255,.28)!important;border-radius:999px!important}
 [data-suno-pinned-column="1"]::-webkit-scrollbar-track{background:transparent!important}
@@ -5075,6 +5077,7 @@ function createTitleEdit() {
       overlay.href = link.href;
       overlay.textContent = fullTitle;
       overlay.setAttribute('aria-label', fullTitle);
+      overlay.dataset.sunoTimestampRow = link.closest('.clip-row,[data-testid="clip-row"]')?'1':'0';
 
       if (link.target) overlay.target = link.target;
       if (link.rel) overlay.rel = link.rel;
@@ -5171,6 +5174,138 @@ function createTitleEdit() {
     window.addEventListener('resize', hide, true);
   }
 
+  function installTimestampMarkers() {
+    const KEY='__sunoTimestampMarkers', POP='suno-time-popup';
+    const old=window[KEY];
+    if(old) {
+      document.removeEventListener('pointermove',old.move,true);
+      document.removeEventListener('pointerdown',old.down,true);
+      old.hide?.(true);
+    }
+    document.getElementById(POP)?.remove();
+
+    const RX=/\d+:\d{2}(?:\.\d+)?/g;
+    const sleep=ms=>new Promise(r=>setTimeout(r,ms));
+    const pageId=()=>location.pathname.match(/^\/song\/([0-9a-f-]{36})/i)?.[1]||'';
+    const hrefId=e=>String(e?.getAttribute?.('href')||'').match(/\/song\/([0-9a-f-]{36})/i)?.[1]||'';
+    const ROW='.clip-row,[data-testid="clip-row"]';
+    const SONG_TEXT='[data-testid*="lyric" i],[class*="lyric" i],[aria-label*="lyric" i],[data-testid*="comment" i],[class*="comment" i],[aria-label*="comment" i]';
+    const songId=e=> {
+      const own=hrefId(e)||hrefId(e?.closest?.('a[href*="/song/"]'));
+      if(own)return own;
+      const row=e?.closest?.(ROW);
+      if(row) {
+        const ids=[...new Set([...row.querySelectorAll('a[href*="/song/"]')].map(hrefId).filter(Boolean))];
+        if(ids.length===1)return ids[0];
+      }
+      return pageId();
+    };
+    const source=e=> {
+      if(!(e instanceof Element)||e.closest(`#${POP},[data-playbar="true"],input,textarea,select,[contenteditable="true"]`))return null;
+
+      const exact=e.closest('#suno-song-title-exact-overlay');
+      if(exact)return exact.dataset.sunoTimestampRow==='1'?exact:null;
+
+      const row=e.closest(ROW);
+      if(row)return e.closest('a[href*="/song/"],p,span,blockquote')||e;
+
+      if(pageId()) {
+        const area=e.closest(SONG_TEXT);
+        if(area)return e.closest('p,span,blockquote,li,div')||area;
+      }
+      return null;
+    };
+    const hit=(el,x,y)=> {
+      const w=document.createTreeWalker(el,NodeFilter.SHOW_TEXT); let n,m;
+      while((n=w.nextNode())) {
+        RX.lastIndex=0;
+        while((m=RX.exec(n.nodeValue||''))) {
+          const r=document.createRange(); r.setStart(n,m.index); r.setEnd(n,m.index+m[0].length);
+          for(const b of r.getClientRects()) if(x>=b.left&&x<=b.right&&y>=b.top&&y<=b.bottom) {
+            const sec=seekParseTime(m[0]); if(Number.isFinite(sec))return {text:m[0],sec,rect:b};
+          }
+        }
+      }
+      return null;
+    };
+    const activeId=()=> {
+      for(const a of document.querySelectorAll('[data-playbar="true"] a[href*="/song/"]')) { const id=hrefId(a); if(id)return id; }
+      return '';
+    };
+    const control=()=> {
+      editableSeekRefresh();
+      const s=document.querySelector(`[data-playbar="true"] ${C}`); if(!s)return null;
+      const t=s.closest('[data-pb="tr"]')||s.parentElement;
+      return t?.querySelector(':scope > .suno-editable-seek-time')?.__sunoSeekControl||null;
+    };
+    const playButton=(src,id)=> {
+      const q='.clip-image-container[role="button"][aria-label^="Play"],button[aria-label^="Play"],[role="button"][aria-label^="Play"]';
+      const row=src?.closest?.('.clip-row,[data-testid="clip-row"]');
+      if(row?.querySelector(q))return row.querySelector(q);
+      for(const a of document.querySelectorAll(`a[href^="/song/${id}"]`)) {
+        const host=a.closest('.clip-row,[data-testid="clip-row"]'); if(host?.querySelector(q))return host.querySelector(q);
+      }
+      if(pageId()===id)return [...document.querySelectorAll(q)].find(b=>!b.closest('[data-playbar="true"],.clip-row,[class*="comment" i]'))||null;
+      return null;
+    };
+    const playAt=async(src,id,target)=> {
+      const same=activeId()===id;
+
+      if(same) {
+        const c=control();
+        if(!c)return;
+        seekPlay(c);
+        seekToSeconds(c,target);
+        return;
+      }
+
+      if(!press(playButton(src,id)))return;
+
+      // Give Suno a moment to finish switching the global player to the new song.
+      await sleep(1000);
+
+      const c=control();
+      if(!c)return;
+      seekToSeconds(c,target);
+      seekPlay(c);
+    };
+
+    let popup=null,timer=0,hideTimer=0,key='',last=null,pin=null,visibleUntil=0;
+    const unlock=()=> { if(pin?.isConnected)delete pin.dataset.sunoTimeOpen; pin=null; };
+    const hide=force=> {
+      clearTimeout(timer); timer=0;
+      clearTimeout(hideTimer);
+      const old=popup, remove=()=>{ if(old?.matches(':hover')&&!force)return; old?.remove(); if(popup===old)popup=null; if(!popup)unlock(); };
+      if(force){key='';remove()}else hideTimer=setTimeout(remove,Math.max(0,visibleUntil-Date.now()));
+    };
+    const show=(src,id,h,k)=> {
+      hide(true); key=k; last={src,id,h};
+      popup=document.createElement('button'); popup.id=POP; popup.type='button'; popup.textContent=h.text;
+      document.body.appendChild(popup);
+      const pr=popup.getBoundingClientRect(), top=h.rect.top-pr.height-5>=4?h.rect.top-pr.height-5:h.rect.bottom+5;
+      popup.style.left=`${Math.max(4,Math.min(innerWidth-pr.width-4,h.rect.left+(h.rect.width-pr.width)/2))}px`;
+      popup.style.top=`${top}px`; visibleUntil=Date.now()+1000;
+      pin=src.closest?.('[data-suno-pinned-column="1"]')||document.querySelector(`[data-suno-pinned-column="1"] a[href^="/song/${id}"]`)?.closest('[data-suno-pinned-column="1"]');
+      if(pin)pin.dataset.sunoTimeOpen='1';
+      requestAnimationFrame(()=>popup&&(popup.dataset.show='1'));
+      popup.onpointerenter=()=>clearTimeout(hideTimer); popup.onpointerleave=()=>hide(false);
+      popup.onclick=e=>{e.preventDefault();e.stopPropagation();const {src,id,h}=last;hide(true);void playAt(src,id,h.sec)};
+    };
+    const move=e=> {
+      if(popup?.contains(e.target))return;
+      const s=source(e.target), h=s&&hit(s,e.clientX,e.clientY), id=s&&songId(s);
+      if(!h||!id){hide(false);return}
+      const k=`${id}|${h.text}|${Math.round(h.rect.left)}|${Math.round(h.rect.top)}`;
+      if(popup&&key===k){clearTimeout(hideTimer);return}
+      if(key===k&&timer)return;
+      hide(true); key=k; timer=setTimeout(()=>{ if(s.isConnected)show(s,id,h,k) },280);
+    };
+    const down=e=> { if(!popup?.contains(e.target))hide(true); };
+    document.addEventListener('pointermove',move,true);
+    document.addEventListener('pointerdown',down,true);
+    window[KEY]={move,down,hide};
+  }
+
   // Main idempotent refresh pass. Safe to call after every relevant DOM mutation.
 function run() {
     wide();
@@ -5211,6 +5346,7 @@ let raf=0, sched=()=>raf||(raf=requestAnimationFrame(()=> {
   }));
   installTrackerBlocker();
   installSongTitleExpansion();
+  installTimestampMarkers();
   installAncestryOverlay();
   installSelectedSongTint();
   installEditableSeekTime();
@@ -5225,4 +5361,4 @@ let raf=0, sched=()=>raf||(raf=requestAnimationFrame(()=> {
   })
 })();
 
-//# sourceURL=suno-tweaks-v83-title-hover-lock-and-separator.js
+//# sourceURL=suno-tweaks-v90-simple-timestamp-seek.js
