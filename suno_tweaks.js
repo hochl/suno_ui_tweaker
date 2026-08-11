@@ -1,5 +1,5 @@
 /**
- * Suno Tweaks v90 — Simple timestamp seek
+ * Suno Tweaks v92 — Strictly exclude pinned timestamps
  *
  * Loaded by the persistent local-file bookmarklet. The script keeps the accepted
  * layout, playlist, title-edit and title-expansion behaviour while adding a compact
@@ -414,7 +414,7 @@ button[aria-label="Playing"][class*="rounded-full"][class*="bg-background"],butt
 .suno-seek-hover-time{position:absolute!important;z-index:2147482999!important;display:block!important;width:max-content!important;height:auto!important;margin:0!important;padding:0!important;border:0!important;background:transparent!important;color:#fff!important;opacity:0!important;font-family:ui-monospace,SFMono-Regular,Consolas,monospace!important;font-size:11px!important;font-style:normal!important;font-weight:400!important;line-height:14px!important;letter-spacing:0!important;text-align:center!important;font-variant-numeric:tabular-nums!important;white-space:nowrap!important;text-shadow:0 1px 3px rgba(0,0,0,.92)!important;transform:translate(-50%,-100%)!important;pointer-events:none!important;user-select:none!important;transition:opacity .05s linear!important}
 .suno-seek-hover-time[data-visible="true"]{opacity:1!important}
 [data-suno-pinned-column="1"]{display:block!important;flex:0 0 var(--suno-pinned-collapsed-height,128px)!important;height:var(--suno-pinned-collapsed-height,128px)!important;min-height:var(--suno-pinned-collapsed-height,128px)!important;max-height:var(--suno-pinned-collapsed-height,128px)!important;margin-bottom:12px!important;overflow-x:hidden!important;overflow-y:hidden!important;overscroll-behavior:contain!important;scrollbar-width:thin!important;box-shadow:0 2px 0 #ffda4c!important}
-[data-suno-pinned-column="1"]:hover,[data-suno-pinned-column="1"]:focus-within,[data-suno-pinned-column="1"][data-suno-pinned-title-hover="1"],[data-suno-pinned-column="1"][data-suno-time-open="1"]{flex-basis:min(var(--suno-pinned-full-height,128px),50vh)!important;height:min(var(--suno-pinned-full-height,128px),50vh)!important;min-height:min(var(--suno-pinned-full-height,128px),50vh)!important;max-height:50vh!important;overflow-x:hidden!important;overflow-y:auto!important}
+[data-suno-pinned-column="1"]:hover,[data-suno-pinned-column="1"]:focus-within,[data-suno-pinned-column="1"][data-suno-pinned-title-hover="1"]{flex-basis:min(var(--suno-pinned-full-height,128px),50vh)!important;height:min(var(--suno-pinned-full-height,128px),50vh)!important;min-height:min(var(--suno-pinned-full-height,128px),50vh)!important;max-height:50vh!important;overflow-x:hidden!important;overflow-y:auto!important}
 [data-suno-pinned-column="1"]::-webkit-scrollbar{width:8px!important;height:0!important}
 [data-suno-pinned-column="1"]::-webkit-scrollbar-thumb{background:rgba(255,255,255,.28)!important;border-radius:999px!important}
 [data-suno-pinned-column="1"]::-webkit-scrollbar-track{background:transparent!important}
@@ -5077,7 +5077,12 @@ function createTitleEdit() {
       overlay.href = link.href;
       overlay.textContent = fullTitle;
       overlay.setAttribute('aria-label', fullTitle);
-      overlay.dataset.sunoTimestampRow = link.closest('.clip-row,[data-testid="clip-row"]')?'1':'0';
+      const timestampRow=link.closest('.clip-row,[data-testid="clip-row"]');
+      const timestampPinned=link.closest(
+        '[data-suno-pinned-column="1"],.clip-pin,[data-pinproxy="1"],[data-suno-pinned="1"]'
+      );
+      overlay.dataset.sunoTimestampRow=
+        timestampRow&&!timestampPinned?'1':'0';
 
       if (link.target) overlay.target = link.target;
       if (link.rel) overlay.rel = link.rel;
@@ -5202,6 +5207,9 @@ function createTitleEdit() {
     };
     const source=e=> {
       if(!(e instanceof Element)||e.closest(`#${POP},[data-playbar="true"],input,textarea,select,[contenteditable="true"]`))return null;
+      if(e.closest(
+        '[data-suno-pinned-column="1"],.clip-pin,[data-pinproxy="1"],[data-suno-pinned="1"]'
+      ))return null;
 
       const exact=e.closest('#suno-song-title-exact-overlay');
       if(exact)return exact.dataset.sunoTimestampRow==='1'?exact:null;
@@ -5270,12 +5278,11 @@ function createTitleEdit() {
       seekPlay(c);
     };
 
-    let popup=null,timer=0,hideTimer=0,key='',last=null,pin=null,visibleUntil=0;
-    const unlock=()=> { if(pin?.isConnected)delete pin.dataset.sunoTimeOpen; pin=null; };
+    let popup=null,timer=0,hideTimer=0,key='',last=null,visibleUntil=0;
     const hide=force=> {
       clearTimeout(timer); timer=0;
       clearTimeout(hideTimer);
-      const old=popup, remove=()=>{ if(old?.matches(':hover')&&!force)return; old?.remove(); if(popup===old)popup=null; if(!popup)unlock(); };
+      const old=popup, remove=()=>{ if(old?.matches(':hover')&&!force)return; old?.remove(); if(popup===old)popup=null; };
       if(force){key='';remove()}else hideTimer=setTimeout(remove,Math.max(0,visibleUntil-Date.now()));
     };
     const show=(src,id,h,k)=> {
@@ -5285,8 +5292,6 @@ function createTitleEdit() {
       const pr=popup.getBoundingClientRect(), top=h.rect.top-pr.height-5>=4?h.rect.top-pr.height-5:h.rect.bottom+5;
       popup.style.left=`${Math.max(4,Math.min(innerWidth-pr.width-4,h.rect.left+(h.rect.width-pr.width)/2))}px`;
       popup.style.top=`${top}px`; visibleUntil=Date.now()+1000;
-      pin=src.closest?.('[data-suno-pinned-column="1"]')||document.querySelector(`[data-suno-pinned-column="1"] a[href^="/song/${id}"]`)?.closest('[data-suno-pinned-column="1"]');
-      if(pin)pin.dataset.sunoTimeOpen='1';
       requestAnimationFrame(()=>popup&&(popup.dataset.show='1'));
       popup.onpointerenter=()=>clearTimeout(hideTimer); popup.onpointerleave=()=>hide(false);
       popup.onclick=e=>{e.preventDefault();e.stopPropagation();const {src,id,h}=last;hide(true);void playAt(src,id,h.sec)};
@@ -5361,4 +5366,4 @@ let raf=0, sched=()=>raf||(raf=requestAnimationFrame(()=> {
   })
 })();
 
-//# sourceURL=suno-tweaks-v90-simple-timestamp-seek.js
+//# sourceURL=suno-tweaks-v92-strict-exclude-pinned-timestamps.js
