@@ -1,5 +1,5 @@
 /**
- * Suno Tweaks v92 — Strictly exclude pinned timestamps
+ * Suno Tweaks v94 — Robust Full Song attribution roots
  *
  * Loaded by the persistent local-file bookmarklet. The script keeps the accepted
  * layout, playlist, title-edit and title-expansion behaviour while adding a compact
@@ -3228,24 +3228,55 @@ function playlistLikes() {
   function workspaceIndexAttributionPayload(childId, payload) {
     childId=lnNorm(childId);
     if(!childId||!payload||typeof payload!=='object')return false;
-
-    const sourceClips=Array.isArray(payload.source_clips)?payload.source_clips:
-      Array.isArray(payload.sources)?payload.sources:[];
     let changed=false;
+    const seen=new WeakSet();
 
-    for(const source of sourceClips) {
-      if(!source||typeof source!=='object')continue;
-      const sourceId=lnNorm(source.clip_id||source.id||source.uuid);
-      if(!sourceId)continue;
-      lnRememberObject({
+    const add=(source,fallback='source')=> {
+      const sourceId=lnNorm(
+        typeof source==='string'?source:
+        source?.clip_id||source?.id||source?.uuid
+      );
+      if(!sourceId||sourceId===childId)return;
+      if(source&&typeof source==='object')lnRememberObject({
         ...source,
         id:sourceId,
         title:source.title||source.name||'',
         image_url:source.image_url||source.image||'',
         audio_url:source.audio_url||source.audio||''
       });
-      changed=lnAddSource(childId,sourceId,lnAttributionKind(source.relationship),source)||changed;
-    }
+      const relation=source&&typeof source==='object'
+        ?source.relationship||source.kind||source.type||fallback
+        :fallback;
+      changed=lnAddSource(
+        childId,sourceId,lnAttributionKind(relation),
+        source&&typeof source==='object'?source:{}
+      )||changed;
+    };
+
+    const walk=(value,kind='source',depth=0)=> {
+      if(value==null||depth>5)return;
+      if(typeof value==='string') { add(value,kind); return; }
+      if(typeof value!=='object'||seen.has(value))return;
+      seen.add(value);
+
+      if(Array.isArray(value)) {
+        for(const item of value)walk(item,kind,depth+1);
+        return;
+      }
+
+      const directId=lnNorm(value.clip_id||value.id||value.uuid);
+      if(directId)add(value,kind);
+
+      const rootKind=value.clip_attribution_type||value.attribution_type||kind;
+      for(const key of ['source_clips','sources'])if(value[key]!=null)
+        walk(value[key],'source',depth+1);
+      for(const key of ['clip_roots','roots','root_clips'])if(value[key]!=null)
+        walk(value[key],rootKind||'root',depth+1);
+      for(const key of ['attributions','items','data','result'])if(value[key]!=null)
+        walk(value[key],kind,depth+1);
+    };
+
+    walk(payload);
     return changed;
   }
 
@@ -3749,7 +3780,10 @@ function playlistLikes() {
     if(forceDetails)workspaceState.requestedSongIds.delete(id);
     try { await workspaceFetchSongBatch([id]); } catch(error) {}
     info=lnSongInfo.get(id);
-    if(info?.title&&info?.image&&info?.createdAt)return info;
+
+    // A summary batch can already contain title/image/date while still omitting
+    // relation metadata such as concat_history used by Suno "Full Song" clips.
+    if(!forceDetails&&info?.title&&info?.image&&info?.createdAt)return info;
 
     try {
       await workspaceFetchJson(`${STUDIO_API_BASE}/api/clip/${id}`,{
@@ -3790,7 +3824,13 @@ function playlistLikes() {
         const missingExtendTime=sources.some(source=>
           (source.kind==='extend'||source.kind==='continue')&&lnContinueAt(source.continueAt)===null
         );
-        const forceDetails=missingExtendTime&&!relationDetailsRefreshed.has(id);
+
+        // If no ancestry is known yet, fetch the full clip object once. This is
+        // especially important for "Full Song" / concat clips whose source chain
+        // may only exist in detailed concat_history metadata.
+        const forceDetails=
+          (sources.length===0||missingExtendTime)&&
+          !relationDetailsRefreshed.has(id);
         if(forceDetails)relationDetailsRefreshed.add(id);
         return [
           workspaceEnsureSong(id,forceDetails).catch(()=>null),
@@ -5366,4 +5406,4 @@ let raf=0, sched=()=>raf||(raf=requestAnimationFrame(()=> {
   })
 })();
 
-//# sourceURL=suno-tweaks-v92-strict-exclude-pinned-timestamps.js
+//# sourceURL=suno-tweaks-v94-robust-attribution-roots.js
