@@ -1,5 +1,5 @@
 /**
- * Suno Tweaks v94 — Robust Full Song attribution roots
+ * Suno Tweaks v95 — Ancestry right-half hover zone
  *
  * Loaded by the persistent local-file bookmarklet. The script keeps the accepted
  * layout, playlist, title-edit and title-expansion behaviour while adding a compact
@@ -4555,6 +4555,7 @@ function playlistLikes() {
       document.removeEventListener('pointerout',previous.onPointerOut,true);
       document.removeEventListener('pointermove',previous.onPointerMove,true);
       document.removeEventListener('pointerdown',previous.onPointerDown,true);
+      document.removeEventListener('contextmenu',previous.onContextMenu,true);
       document.removeEventListener('keydown',previous.onKeyDown,true);
       window.removeEventListener('scroll',previous.onViewportChange,true);
       window.removeEventListener('resize',previous.onViewportChange,true);
@@ -4852,6 +4853,11 @@ function playlistLikes() {
       });
     };
 
+    const inOpenHalf=(row,x)=> {
+      const rect=row?.getBoundingClientRect?.();
+      return Boolean(rect&&rect.width>0&&x>=rect.left+rect.width/2);
+    };
+
     const scheduleOpen=(row,point)=> {
       if(point&&Number.isFinite(point.x)&&Number.isFinite(point.y))pointerAnchor={x:point.x,y:point.y};
       clearOpen();
@@ -4871,6 +4877,10 @@ function playlistLikes() {
       }
       const row=event.target.closest?.('[data-testid="clip-row"]');
       if(!row||row.contains(event.relatedTarget))return;
+      if(!inOpenHalf(row,event.clientX)) {
+        clearOpen();
+        return;
+      }
       scheduleOpen(row,{x:event.clientX,y:event.clientY});
     };
 
@@ -4880,6 +4890,15 @@ function playlistLikes() {
       const row=event.target.closest?.('[data-testid="clip-row"]');
       if(!row)return;
       pointerAnchor={x:event.clientX,y:event.clientY};
+
+      if(!inOpenHalf(row,event.clientX)) {
+        clearOpen();
+        return;
+      }
+
+      // Entering the row through the left half does not fire another pointerover
+      // when crossing its midpoint, so arm the normal delayed popup here once.
+      if(!openTimer)scheduleOpen(row,pointerAnchor);
     };
 
     const onPointerOut=event=> {
@@ -4896,22 +4915,28 @@ function playlistLikes() {
     };
 
     const onPointerDown=event=> {
+      if(event.button===2) {
+        hide();
+        return;
+      }
       if(overlay&&(event.target===overlay||overlay.contains(event.target)))return;
       if(event.target.closest?.('[data-testid="clip-row"]'))return;
       hide();
     };
+    const onContextMenu=()=>hide();
     const onKeyDown=event=> { if(event.key==='Escape')hide(); };
     const onViewportChange=event=> {
       if(event?.type==='scroll'&&overlay&&(event.target===overlay||overlay.contains(event.target)))return;
       hide();
     };
     const destroy=()=>hide();
-    const handlers={onPointerOver,onPointerOut,onPointerMove,onPointerDown,onKeyDown,onViewportChange,destroy};
+    const handlers={onPointerOver,onPointerOut,onPointerMove,onPointerDown,onContextMenu,onKeyDown,onViewportChange,destroy};
     window[ANCESTRY_HANDLER_KEY]=handlers;
     document.addEventListener('pointerover',onPointerOver,true);
     document.addEventListener('pointerout',onPointerOut,true);
     document.addEventListener('pointermove',onPointerMove,true);
     document.addEventListener('pointerdown',onPointerDown,true);
+    document.addEventListener('contextmenu',onContextMenu,true);
     document.addEventListener('keydown',onKeyDown,true);
     window.addEventListener('scroll',onViewportChange,true);
     window.addEventListener('resize',onViewportChange,true);
@@ -5406,4 +5431,4 @@ let raf=0, sched=()=>raf||(raf=requestAnimationFrame(()=> {
   })
 })();
 
-//# sourceURL=suno-tweaks-v94-robust-attribution-roots.js
+//# sourceURL=suno-tweaks-v95-ancestry-right-half-contextmenu.js
