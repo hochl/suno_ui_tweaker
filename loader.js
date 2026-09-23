@@ -1,5 +1,21 @@
+// ==UserScript==
+// @name         Suno Local UI Tweak Auto Loader
+// @namespace    suno-local-ui-tweaks
+// @version      39.0
+// @description  Automatically executes the Suno UI tweak stored by the existing local-file loader after every Suno page load.
+// @match        https://suno.com/*
+// @match        https://www.suno.com/*
+// @run-at       document-idle
+// @grant        none
+// @inject-into  page
+// ==/UserScript==
+
 (() => {
   "use strict";
+
+  const AUTO_GUARD = "__sunoLocalAutoLoaderV39";
+  if (window[AUTO_GUARD]) return;
+  window[AUTO_GUARD] = true;
 
   // Persistent local loader for the main Suno enhancement script.
   // The selected source file is stored in suno.com's localStorage.
@@ -8,6 +24,23 @@
   const BUTTON_ID = "suno-local-script-delete-button";
   const OBSERVER_KEY = "__sunoLocalLoaderUiObserver";
   const EARN_CREDITS_SELECTOR = 'a[href="/listen-and-rank"]';
+
+  function findEarnCreditsControl() {
+    // Old Suno sidebar.
+    const legacy = document.querySelector(EARN_CREDITS_SELECTOR);
+    if (legacy) return legacy;
+
+    // Current Suno sidebar (September 2026): Earn Credits is a button without href.
+    const byText = [...document.querySelectorAll("button")].find(button =>
+      button.textContent.replace(/\s+/g, " ").trim() === "Earn Credits"
+    );
+    if (byText) return byText;
+
+    // Layout fallback: in the current sidebar Earn Credits directly precedes Labs.
+    const labs = document.querySelector('a[href="/labs"]');
+    const previous = labs?.previousElementSibling;
+    return previous?.tagName === "BUTTON" ? previous : null;
+  }
 
   function stopUiObserver() {
     window[OBSERVER_KEY]?.disconnect?.();
@@ -30,7 +63,7 @@
     console.log("[Suno Local Loader] Stored script deleted.");
   }
 
-  function createDeleteButton(earnCreditsLink) {
+  function createDeleteButton(earnCreditsControl) {
     // Remove a button created by an older loader version, including the former
     // fixed-position body control.
     document.getElementById(BUTTON_ID)?.remove();
@@ -45,7 +78,7 @@
 
     // Reuse Suno's own Earn Credits classes so the control follows the sidebar
     // width, colors, hover effect and collapsed-state behavior automatically.
-    button.className = earnCreditsLink.className;
+    button.className = earnCreditsControl.className;
 
     button.innerHTML = `
       <span aria-hidden="true" class="hxc-btn-overlay-slot hxc-btn-border"></span>
@@ -80,9 +113,9 @@
       return false;
     }
 
-    const earnCreditsLink = document.querySelector(EARN_CREDITS_SELECTOR);
-    const targetGroup = earnCreditsLink?.parentElement;
-    if (!earnCreditsLink || !targetGroup) return false;
+    const earnCreditsControl = findEarnCreditsControl();
+    const targetGroup = earnCreditsControl?.parentElement;
+    if (!earnCreditsControl || !targetGroup) return false;
 
     let button = document.getElementById(BUTTON_ID);
 
@@ -90,15 +123,15 @@
     // different parent. A fresh button also guarantees the current Suno classes.
     if (!button || button.parentElement !== targetGroup) {
       button?.remove();
-      button = createDeleteButton(earnCreditsLink);
-      targetGroup.insertBefore(button, earnCreditsLink);
-    } else if (button.nextElementSibling !== earnCreditsLink) {
-      targetGroup.insertBefore(button, earnCreditsLink);
+      button = createDeleteButton(earnCreditsControl);
+      targetGroup.insertBefore(button, earnCreditsControl);
+    } else if (button.nextElementSibling !== earnCreditsControl) {
+      targetGroup.insertBefore(button, earnCreditsControl);
     }
 
     // Keep the style synchronized if Suno changes the navigation button classes.
-    if (button.className !== earnCreditsLink.className) {
-      button.className = earnCreditsLink.className;
+    if (button.className !== earnCreditsControl.className) {
+      button.className = earnCreditsControl.className;
     }
 
     return true;
@@ -179,7 +212,7 @@
     const metadata = JSON.parse(localStorage.getItem(META_KEY) || "{}");
 
     if (code) executeScript(code, metadata.name);
-    else chooseLocalFile();
+    else console.info("[Suno Local Auto Loader] No stored UI-tweak script found. Run the existing loader bookmarklet once and select the current Suno Tweaks TXT file.");
   } catch (error) {
     console.error("[Suno Local Loader] Loader error.", error);
     alert(`Suno loader error:\n${error}`);
